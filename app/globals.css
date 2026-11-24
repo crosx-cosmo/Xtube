@@ -1,0 +1,269 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-outfit: 'Outfit';
+  --font-jakarta: 'Plus Jakarta Sans';
+  --font-ibm-mono: 'IBM Plex Mono';
+  --surface-canvas: #f4f5f8;
+  --surface-panel: #ffffff;
+  --surface-elevated: #eff1f5;
+  --ink-primary: #111318;
+  --ink-secondary: #5c6270;
+  --accent-crimson: #e11d48;
+  --accent-crimson-hover: #be123c;
+  --hairline: #e6e8ef;
+  --text-hero-public: clamp(1.375rem, 1.05rem + 1.45vw, 2.25rem);
+  --text-hero-studio: clamp(1.75rem, 1.35rem + 1.4vw, 2.375rem);
+  --space-section: clamp(1.25rem, 1rem + 1vw, 2rem);
+}
+
+.dark {
+  --surface-canvas: #0b0b0f;
+  --surface-panel: #121218;
+  --surface-elevated: #1a1a22;
+  --ink-primary: #f4f4f6;
+  --ink-secondary: #9ca3af;
+  --accent-crimson: #e11d48;
+  --accent-crimson-hover: #f43f5e;
+  --hairline: #23232d;
+}
+
+@theme inline {
+  --font-display: var(--font-outfit), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-jakarta), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-ibm-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--surface-canvas);
+    color: var(--ink-primary);
+    color-scheme: light;
+    scroll-behavior: smooth;
+    overflow-x: clip;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--surface-canvas);
+    color: var(--ink-primary);
+    font-family: var(--font-sans);
+    min-height: 100dvh;
+    overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+/* Smooth circular View Transition wipe for Light/Dark mode toggling */
+html[data-vt='theme']::view-transition-old(root),
+html[data-vt='theme']::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-vt='theme']::view-transition-old(root) {
+  z-index: 1;
+}
+
+html[data-vt='theme']::view-transition-new(root) {
+  z-index: 9999;
+}
+
+/* Native-app View Transition API choreography between browsing & watching */
+@keyframes vt-fade-out-recess {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes vt-fade-in-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vt-fade-out-drop {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@keyframes vt-fade-in-expand {
+  from {
+    opacity: 0;
+    transform: scale(0.988);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes vt-cross-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-cross-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+html[data-vt='nav'] [data-testid='app-header'] {
+  view-transition-name: app-header;
+}
+
+html[data-vt='nav']::view-transition-group(app-header) {
+  z-index: 40;
+  animation-duration: 0ms;
+}
+
+html[data-vt='nav']::view-transition-old(app-header),
+html[data-vt='nav']::view-transition-new(app-header) {
+  animation: none;
+}
+
+html[data-vt='nav']::view-transition-group(video-stage),
+html[data-vt='theater']::view-transition-group(video-stage) {
+  z-index: 30;
+  animation-duration: 380ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: clip;
+  border-radius: 1rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+html[data-vt='nav']::view-transition-old(video-stage),
+html[data-vt='nav']::view-transition-new(video-stage),
+html[data-vt='theater']::view-transition-old(video-stage),
+html[data-vt='theater']::view-transition-new(video-stage) {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  overflow: clip;
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-vt='nav']::view-transition-group(video-title) {
+  z-index: 31;
+  animation-duration: 340ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-vt='nav']::view-transition-old(video-title),
+html[data-vt='nav']::view-transition-new(video-title) {
+  height: 100%;
+  object-fit: contain;
+  animation-duration: 280ms;
+}
+
+html[data-vt='nav'][data-vt-direction='to-watch']::view-transition-old(root) {
+  animation: vt-fade-out-recess 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='nav'][data-vt-direction='to-watch']::view-transition-new(root) {
+  animation: vt-fade-in-rise 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='nav'][data-vt-direction='to-browse']::view-transition-old(root) {
+  animation: vt-fade-out-drop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='nav'][data-vt-direction='to-browse']::view-transition-new(root) {
+  animation: vt-fade-in-expand 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='nav'][data-vt-direction='to-video']::view-transition-old(root),
+html[data-vt='nav'][data-vt-direction='crossfade']::view-transition-old(root) {
+  animation: vt-cross-fade-out 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='nav'][data-vt-direction='to-video']::view-transition-new(root),
+html[data-vt='nav'][data-vt-direction='crossfade']::view-transition-new(root) {
+  animation: vt-cross-fade-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-vt='theater']::view-transition-old(root),
+html[data-vt='theater']::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Fallback surface crossfade when View Transitions API is unavailable */
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition-property: background-color, border-color, color, fill, stroke !important;
+  transition-duration: 320ms !important;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+  html.theme-transitioning,
+  html.theme-transitioning * {
+    transition-duration: 0ms !important;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Preserve dark obsidian surface when browsers autofill studio auth inputs */
+.studio-input:-webkit-autofill,
+.studio-input:-webkit-autofill:hover,
+.studio-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #0a0909 inset !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+  caret-color: #f4f4f5;
+  transition: background-color 9999s ease-in-out 0s;
+}
