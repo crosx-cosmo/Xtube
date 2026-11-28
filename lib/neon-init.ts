@@ -44,15 +44,20 @@ async function runSchemaBootstrap(force = false): Promise<void> {
         AND to_regclass('video_likes') IS NOT NULL
         AND to_regclass('creator_follows') IS NOT NULL
         AND to_regclass('watch_history') IS NOT NULL
+        AND to_regclass('video_reactions') IS NOT NULL
         AND to_regclass('auth_sessions') IS NOT NULL AS schema_ready
     `) as unknown as Array<{ schema_ready: boolean }>;
 
     if (probeRows[0]?.schema_ready) {
-      // Ensure composite performance indexes exist in the background without blocking first request
+      // Ensure composite and functional performance indexes exist in the background without blocking first request
       void Promise.allSettled([
         sql`CREATE INDEX IF NOT EXISTS idx_videos_category_views ON videos (category_id, views DESC)`,
         sql`CREATE INDEX IF NOT EXISTS idx_videos_user_created ON videos (user_id, created_at DESC)`,
         sql`CREATE INDEX IF NOT EXISTS idx_comments_created_desc ON comments (created_at DESC)`,
+        sql`CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))`,
+        sql`CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username))`,
+        sql`CREATE INDEX IF NOT EXISTS idx_categories_slug_lower ON categories (LOWER(slug))`,
+        sql`CREATE INDEX IF NOT EXISTS idx_video_reactions_video_type ON video_reactions (video_id, reaction_type)`,
       ]);
       return;
     }
@@ -166,6 +171,15 @@ async function runSchemaBootstrap(force = false): Promise<void> {
       )
     `,
     sql`
+      CREATE TABLE IF NOT EXISTS video_reactions (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+        reaction_type VARCHAR(24) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, video_id, reaction_type)
+      )
+    `,
+    sql`
       CREATE TABLE IF NOT EXISTS watch_history (
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
@@ -191,9 +205,12 @@ async function runSchemaBootstrap(force = false): Promise<void> {
       )
     `,
     sql`CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username))`,
+    sql`CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))`,
     sql`CREATE INDEX IF NOT EXISTS idx_users_is_educator ON users (is_educator) WHERE is_educator = TRUE`,
     sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_neon_auth_id ON users (neon_auth_id) WHERE neon_auth_id IS NOT NULL`,
     sql`CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories (slug)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_categories_slug_lower ON categories (LOWER(slug))`,
     sql`CREATE INDEX IF NOT EXISTS idx_videos_user_created ON videos (user_id, created_at DESC)`,
     sql`CREATE INDEX IF NOT EXISTS idx_videos_category_views ON videos (category_id, views DESC)`,
     sql`CREATE INDEX IF NOT EXISTS idx_videos_created_at_desc ON videos (created_at DESC)`,
@@ -203,6 +220,7 @@ async function runSchemaBootstrap(force = false): Promise<void> {
     sql`CREATE INDEX IF NOT EXISTS idx_comments_created_desc ON comments (created_at DESC)`,
     sql`CREATE INDEX IF NOT EXISTS idx_bookmarks_user_created ON bookmarks (user_id, created_at DESC)`,
     sql`CREATE INDEX IF NOT EXISTS idx_video_likes_video ON video_likes (video_id)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_video_reactions_video_type ON video_reactions (video_id, reaction_type)`,
     sql`CREATE INDEX IF NOT EXISTS idx_creator_follows_creator ON creator_follows (creator_id)`,
     sql`CREATE INDEX IF NOT EXISTS idx_watch_history_user_recent ON watch_history (user_id, watched_at DESC)`,
     sql`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions (user_id)`,

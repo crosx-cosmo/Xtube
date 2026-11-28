@@ -10,6 +10,7 @@ import {
   buildWebsiteJsonLd,
   formatIso8601Duration,
   getSiteUrl,
+  serializeJsonLd,
   SITE_KEYWORDS,
   SITE_NAME,
 } from './seo';
@@ -62,12 +63,16 @@ test('SEO JSON-LD builders emit valid structured data with Hey Lady 18+ metadata
 
   const website = buildWebsiteJsonLd('https://heylady.test');
   assert.equal(website['@context'], 'https://schema.org');
-  assert.equal(website['@graph'].length, 2);
-  assert.equal(website['@graph'][1]['@type'], 'WebSite');
-  assert.equal(website['@graph'][1].name, 'Hey Lady');
-  assert.equal(website['@graph'][1].isFamilyFriendly, false);
-  assert.equal(website['@graph'][1].contentRating, '18+');
-  assert.ok(website['@graph'][1].keywords.includes('Hot Sex Videos'));
+  assert.equal(website['@graph'].length, 3);
+  const webSiteNode = website['@graph'][1];
+  const webAppNode = website['@graph'][2];
+  assert.equal(webSiteNode['@type'], 'WebSite');
+  assert.equal(webSiteNode.name, 'Hey Lady');
+  assert.equal(webSiteNode.isFamilyFriendly, false);
+  assert.equal(webSiteNode.contentRating, '18+');
+  assert.ok((webSiteNode.keywords ?? '').includes('Hot Sex Videos'));
+  assert.equal(webAppNode['@type'], 'WebApplication');
+  assert.equal(webAppNode.applicationCategory, 'MultimediaApplication');
 
   const creator: User = {
     id: 'usr-test-1',
@@ -158,4 +163,13 @@ test('SEO JSON-LD builders emit valid structured data with Hey Lady 18+ metadata
   );
   assert.equal(itemListLd['@type'], 'CollectionPage');
   assert.equal(itemListLd.mainEntity.numberOfItems, 1);
+
+  const unsafePayload = {
+    title: '</script><script>alert("xss")</script>&test',
+  };
+  const serialized = serializeJsonLd(unsafePayload);
+  assert.equal(serialized.includes('</script>'), false);
+  assert.equal(serialized.includes('<script>'), false);
+  assert.ok(serialized.includes('\\u003c/script\\u003e'));
+  assert.ok(serialized.includes('\\u0026test'));
 });

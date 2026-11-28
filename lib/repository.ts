@@ -28,10 +28,20 @@ import type {
   WatchHistoryEntry,
 } from './types';
 import {
+  isLegacyMockCategory,
+  LEGACY_MOCK_CATEGORY_IDS,
+  LEGACY_MOCK_CATEGORY_SLUGS,
   slugifyCategory,
   validateCategoryPayload,
   validateUploadPayload,
 } from './video-utils';
+import {
+  createEmptyReactionCounts,
+  isValidVideoReactionType,
+  normalizeReactionState,
+  type VideoReactionState,
+  type VideoReactionType,
+} from './video-reactions';
 
 interface RawUserRow {
   id: string;
@@ -94,7 +104,7 @@ function mapUserRow(row: RawUserRow): User {
     id: row.id,
     name: row.name,
     username: row.username,
-    email: row.email,
+    email: '',
     avatarUrl: row.avatar_url,
     bio: row.bio ?? '',
     credentials: row.credentials ?? '',
@@ -136,7 +146,7 @@ function mapVideoRow(row: RawVideoRow): VideoWithMeta {
       id: row.user_id,
       name: row.creator_name,
       username: row.creator_username,
-      email: row.creator_email,
+      email: '',
       avatarUrl: row.creator_avatar_url,
       bio: row.creator_bio ?? '',
       credentials: row.creator_credentials ?? '',
@@ -202,18 +212,13 @@ async function queryHydratedVideos(params: {
       c.name AS category_name,
       c.slug AS category_slug,
       COALESCE(c.description, '') AS category_description,
-      COALESCE(vc.chapter_count, 0)::int AS chapter_count,
+      (SELECT COUNT(*)::int FROM video_chapters vc WHERE vc.video_id = v.id) AS chapter_count,
       (b.video_id IS NOT NULL) AS is_bookmarked,
       (vl.video_id IS NOT NULL) AS has_liked,
       COALESCE(wh.progress_seconds, 0)::int AS watch_progress_seconds
     FROM videos v
     JOIN users u ON u.id = v.user_id
     JOIN categories c ON c.id = v.category_id
-    LEFT JOIN (
-      SELECT video_id, COUNT(*)::int AS chapter_count
-      FROM video_chapters
-      GROUP BY video_id
-    ) vc ON vc.video_id = v.id
     LEFT JOIN bookmarks b
       ON ${viewerId}::text IS NOT NULL AND b.video_id = v.id AND b.user_id = ${viewerId}
     LEFT JOIN video_likes vl
@@ -273,18 +278,13 @@ async function queryRelatedVideos(
       c.name AS category_name,
       c.slug AS category_slug,
       COALESCE(c.description, '') AS category_description,
-      COALESCE(vc.chapter_count, 0)::int AS chapter_count,
+      (SELECT COUNT(*)::int FROM video_chapters vc WHERE vc.video_id = v.id) AS chapter_count,
       (b.video_id IS NOT NULL) AS is_bookmarked,
       (vl.video_id IS NOT NULL) AS has_liked,
       COALESCE(wh.progress_seconds, 0)::int AS watch_progress_seconds
     FROM videos v
     JOIN users u ON u.id = v.user_id
     JOIN categories c ON c.id = v.category_id
-    LEFT JOIN (
-      SELECT video_id, COUNT(*)::int AS chapter_count
-      FROM video_chapters
-      GROUP BY video_id
-    ) vc ON vc.video_id = v.id
     LEFT JOIN bookmarks b
       ON ${viewerId}::text IS NOT NULL AND b.video_id = v.id AND b.user_id = ${viewerId}
     LEFT JOIN video_likes vl
@@ -313,12 +313,24 @@ export const getCategories = cache(async (): Promise<Category[]> => {
     () =>
       withOptionalNeonRead<Category[]>([], async () => {
         const sql = getNeonSql();
-        const rows = await sql`
+        // Single-round-trip CTE: purge unused legacy mock categories and load active categories
+        const rows = (await sql`
+          WITH purged AS (
+            DELETE FROM categories c
+            WHERE (
+              c.id = ANY(${[...LEGACY_MOCK_CATEGORY_IDS]}::text[])
+              OR c.slug = ANY(${[...LEGACY_MOCK_CATEGORY_SLUGS]}::text[])
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM videos v WHERE v.category_id = c.id
+            )
+          )
           SELECT id::text, name, slug, COALESCE(description, '') AS description
           FROM categories
           ORDER BY name ASC
-        `;
-        return rows as unknown as Category[];
+        `) as unknown as Category[];
+
+        return rows.filter((row) => !isLegacyMockCategory(row));
       })
   );
 });
@@ -384,38 +396,48 @@ const loadVideoDetailBase = cache(
       withOptionalNeonRead<VideoDetail | null>(null, async () => {
         const sql = getNeonSql();
 
-        const [videoRows, chapterRows, commentRows] = await Promise.all([
-          queryHydratedVideos({ viewerId, videoId, limit: 1 }),
-          sql`
-            SELECT id, video_id, timestamp_seconds, title, COALESCE(summary, '') AS summary
-            FROM video_chapters
-            WHERE video_id = ${videoId}
-            ORDER BY timestamp_seconds ASC
-          `,
-          sql`
-            SELECT
-              cm.id,
-              cm.video_id,
-              cm.user_id,
-              cm.parent_id,
-              cm.content,
-              cm.is_anonymous,
-              cm.upvotes,
-              cm.created_at,
-              u.name AS author_name,
-              u.username AS author_username,
-              u.avatar_url AS author_avatar_url,
-              u.is_educator AS author_is_educator,
-              (cu.comment_id IS NOT NULL) AS has_upvoted
-            FROM comments cm
-            JOIN users u ON u.id = cm.user_id
-            LEFT JOIN comment_upvotes cu
-              ON ${viewerId}::text IS NOT NULL AND cu.comment_id = cm.id AND cu.user_id = ${viewerId}
-            WHERE cm.video_id = ${videoId}
-            ORDER BY cm.created_at DESC
-            LIMIT 200
-          `,
-        ]);
+        const [videoRows, chapterRows, commentRows, reactionRows] =
+          await Promise.all([
+            queryHydratedVideos({ viewerId, videoId, limit: 1 }),
+            sql`
+              SELECT id, video_id, timestamp_seconds, title, COALESCE(summary, '') AS summary
+              FROM video_chapters
+              WHERE video_id = ${videoId}
+              ORDER BY timestamp_seconds ASC
+            `,
+            sql`
+              SELECT
+                cm.id,
+                cm.video_id,
+                cm.user_id,
+                cm.parent_id,
+                cm.content,
+                cm.is_anonymous,
+                cm.upvotes,
+                cm.created_at,
+                u.name AS author_name,
+                u.username AS author_username,
+                u.avatar_url AS author_avatar_url,
+                u.is_educator AS author_is_educator,
+                (cu.comment_id IS NOT NULL) AS has_upvoted
+              FROM comments cm
+              JOIN users u ON u.id = cm.user_id
+              LEFT JOIN comment_upvotes cu
+                ON ${viewerId}::text IS NOT NULL AND cu.comment_id = cm.id AND cu.user_id = ${viewerId}
+              WHERE cm.video_id = ${videoId}
+              ORDER BY cm.created_at DESC
+              LIMIT 200
+            `,
+            sql`
+              SELECT
+                reaction_type,
+                COUNT(*)::int AS count,
+                BOOL_OR(${viewerId}::text IS NOT NULL AND user_id = ${viewerId}) AS viewer_reacted
+              FROM video_reactions
+              WHERE video_id = ${videoId}
+              GROUP BY reaction_type
+            `,
+          ]);
 
         const hydrated = videoRows[0];
         if (!hydrated) return null;
@@ -470,12 +492,31 @@ const loadVideoDetailBase = cache(
           },
         }));
 
+        const rawReactionMap: Partial<Record<string, number>> = {};
+        const viewerReactionsList: string[] = [];
+        for (const r of reactionRows as unknown as Array<{
+          reaction_type: string;
+          count: number;
+          viewer_reacted: boolean;
+        }>) {
+          if (isValidVideoReactionType(r.reaction_type)) {
+            rawReactionMap[r.reaction_type] = Number(r.count ?? 0);
+            if (r.viewer_reacted) {
+              viewerReactionsList.push(r.reaction_type);
+            }
+          }
+        }
+
         return {
           ...hydrated,
           chapters,
           comments,
           isFollowingCreator: followRows.length > 0,
           relatedVideos,
+          reactions: normalizeReactionState({
+            counts: rawReactionMap,
+            viewerReactions: viewerReactionsList,
+          }),
         };
       });
 
@@ -851,6 +892,118 @@ export async function toggleVideoLike(
       videoId,
       likes: Number(rows[0].likes ?? 0),
       hasLiked: Boolean(rows[0].has_liked),
+    };
+  });
+}
+
+/**
+ * Fetches current reaction counts and active viewer reactions for a video.
+ */
+export async function getVideoReactions(
+  videoId: string,
+  viewerIdOverride?: string | null
+): Promise<VideoReactionState> {
+  const emptyState: VideoReactionState = {
+    counts: createEmptyReactionCounts(),
+    viewerReactions: [],
+  };
+  if (!isNeonConfigured()) {
+    return emptyState;
+  }
+
+  const viewerId =
+    viewerIdOverride !== undefined
+      ? viewerIdOverride
+      : await getOptionalViewerId();
+
+  return withOptionalNeonRead<VideoReactionState>(emptyState, async () => {
+    const sql = getNeonSql();
+    const rows = (await sql`
+      SELECT
+        reaction_type,
+        COUNT(*)::int AS count,
+        BOOL_OR(${viewerId}::text IS NOT NULL AND user_id = ${viewerId}) AS viewer_reacted
+      FROM video_reactions
+      WHERE video_id = ${videoId}
+      GROUP BY reaction_type
+    `) as unknown as Array<{
+      reaction_type: string;
+      count: number;
+      viewer_reacted: boolean;
+    }>;
+
+    const counts: Partial<Record<string, number>> = {};
+    const viewerReactions: string[] = [];
+    for (const r of rows) {
+      if (isValidVideoReactionType(r.reaction_type)) {
+        counts[r.reaction_type] = Number(r.count ?? 0);
+        if (r.viewer_reacted) {
+          viewerReactions.push(r.reaction_type);
+        }
+      }
+    }
+
+    return normalizeReactionState({ counts, viewerReactions });
+  });
+}
+
+/**
+ * Atomic 1-round-trip CTE toggle for an emoji reaction on a video.
+ */
+export async function toggleVideoReaction(
+  videoId: string,
+  viewerId: string,
+  reactionType: VideoReactionType
+): Promise<
+  | (VideoReactionState & {
+      videoId: string;
+      reactionType: VideoReactionType;
+      active: boolean;
+    })
+  | null
+> {
+  if (!isValidVideoReactionType(reactionType)) {
+    return null;
+  }
+
+  return withNeonSchemaRecovery(async () => {
+    await ensureViewerRowInDb(viewerId);
+    const sql = getNeonSql();
+
+    const vidRows = (await sql`
+      SELECT id FROM videos WHERE id = ${videoId} LIMIT 1
+    `) as unknown as Array<{ id: string }>;
+    if (vidRows.length === 0) {
+      return null;
+    }
+
+    const toggleRows = (await sql`
+      WITH del AS (
+        DELETE FROM video_reactions
+        WHERE user_id = ${viewerId}
+          AND video_id = ${videoId}
+          AND reaction_type = ${reactionType}
+        RETURNING 1
+      ),
+      ins AS (
+        INSERT INTO video_reactions (user_id, video_id, reaction_type)
+        SELECT ${viewerId}, ${videoId}, ${reactionType}
+        WHERE NOT EXISTS (SELECT 1 FROM del)
+        ON CONFLICT DO NOTHING
+        RETURNING 1
+      )
+      SELECT EXISTS (SELECT 1 FROM ins) AS active
+    `) as unknown as Array<{ active: boolean }>;
+
+    const active = Boolean(toggleRows[0]?.active);
+    const updatedState = await getVideoReactions(videoId, viewerId);
+    invalidateCatalogCaches(videoId);
+
+    return {
+      videoId,
+      reactionType,
+      active,
+      ...updatedState,
     };
   });
 }
@@ -1317,7 +1470,7 @@ export async function getUserLibrary(viewerIdOverride?: string | null): Promise<
           COALESCE(u.credentials, '') AS creator_credentials, u.is_educator AS creator_is_educator,
           u.followers_count AS creator_followers_count, u.created_at AS creator_created_at,
           c.name AS category_name, c.slug AS category_slug, COALESCE(c.description, '') AS category_description,
-          COALESCE(vc.chapter_count, 0)::int AS chapter_count,
+          (SELECT COUNT(*)::int FROM video_chapters vc WHERE vc.video_id = v.id) AS chapter_count,
           TRUE AS is_bookmarked,
           (vl.video_id IS NOT NULL) AS has_liked,
           COALESCE(wh.progress_seconds, 0)::int AS watch_progress_seconds
@@ -1325,11 +1478,6 @@ export async function getUserLibrary(viewerIdOverride?: string | null): Promise<
         JOIN videos v ON v.id = b.video_id
         JOIN users u ON u.id = v.user_id
         JOIN categories c ON c.id = v.category_id
-        LEFT JOIN (
-          SELECT video_id, COUNT(*)::int AS chapter_count
-          FROM video_chapters
-          GROUP BY video_id
-        ) vc ON vc.video_id = v.id
         LEFT JOIN video_likes vl ON vl.video_id = v.id AND vl.user_id = ${viewerId}
         LEFT JOIN watch_history wh ON wh.video_id = v.id AND wh.user_id = ${viewerId}
         WHERE b.user_id = ${viewerId}
@@ -1348,7 +1496,7 @@ export async function getUserLibrary(viewerIdOverride?: string | null): Promise<
           COALESCE(u.credentials, '') AS creator_credentials, u.is_educator AS creator_is_educator,
           u.followers_count AS creator_followers_count, u.created_at AS creator_created_at,
           c.name AS category_name, c.slug AS category_slug, COALESCE(c.description, '') AS category_description,
-          COALESCE(vc.chapter_count, 0)::int AS chapter_count,
+          (SELECT COUNT(*)::int FROM video_chapters vc WHERE vc.video_id = v.id) AS chapter_count,
           (b.video_id IS NOT NULL) AS is_bookmarked,
           (vl.video_id IS NOT NULL) AS has_liked,
           wh.progress_seconds::int AS watch_progress_seconds
@@ -1356,11 +1504,6 @@ export async function getUserLibrary(viewerIdOverride?: string | null): Promise<
         JOIN videos v ON v.id = wh.video_id
         JOIN users u ON u.id = v.user_id
         JOIN categories c ON c.id = v.category_id
-        LEFT JOIN (
-          SELECT video_id, COUNT(*)::int AS chapter_count
-          FROM video_chapters
-          GROUP BY video_id
-        ) vc ON vc.video_id = v.id
         LEFT JOIN bookmarks b ON b.video_id = v.id AND b.user_id = ${viewerId}
         LEFT JOIN video_likes vl ON vl.video_id = v.id AND vl.user_id = ${viewerId}
         WHERE wh.user_id = ${viewerId}
@@ -1696,16 +1839,19 @@ export async function deleteCategory(
   return withNeonSchemaRecovery(async () => {
     const sql = getNeonSql();
 
-    const [existing, usage] = await Promise.all([
-      sql`SELECT id FROM categories WHERE id = ${categoryId} LIMIT 1`,
-      sql`SELECT COUNT(*)::int AS cnt FROM videos WHERE category_id = ${categoryId}`,
-    ]);
+    const checkRows = (await sql`
+      SELECT c.id, COUNT(v.id)::int AS cnt
+      FROM categories c
+      LEFT JOIN videos v ON v.category_id = c.id
+      WHERE c.id = ${categoryId}
+      GROUP BY c.id
+    `) as unknown as Array<{ id: string; cnt: number }>;
 
-    if (existing.length === 0) {
+    if (checkRows.length === 0) {
       return { deleted: false, notFound: true };
     }
 
-    const count = Number((usage as unknown as Array<{ cnt: number }>)[0]?.cnt ?? 0);
+    const count = Number(checkRows[0].cnt ?? 0);
     if (count > 0) {
       return {
         deleted: false,

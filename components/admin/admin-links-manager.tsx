@@ -358,7 +358,7 @@ export function AdminLinksManager({
               type="text"
               value={categoryName}
               onChange={(e) => onCategoryNameChange(e.target.value)}
-              placeholder="e.g., Attachment Theory or Mindful Dating"
+              placeholder="e.g., Hardcore or VIP Exclusive"
               className={INPUT_CLASS}
             />
             <p className="mt-1 text-[0.6875rem] text-zinc-500">
@@ -372,21 +372,21 @@ export function AdminLinksManager({
           </div>
         </div>
 
-        {/* Educator Channel & Duration (H : M : S) */}
+        {/* Creator Channel & Duration (H : M : S) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           <div>
             <label
               htmlFor="admin-educator"
               className="block text-xs font-medium text-zinc-300 mb-1.5"
             >
-              Educator Channel
+              Creator Channel
             </label>
             <input
               id="admin-educator"
               type="text"
               value={educatorName}
               onChange={(e) => onEducatorNameChange(e.target.value)}
-              placeholder="e.g., Dr. Clara Lindholm"
+              placeholder="e.g., Hey Lady VIP"
               className={INPUT_CLASS}
             />
             <p className="mt-1 text-[0.6875rem] text-zinc-500">

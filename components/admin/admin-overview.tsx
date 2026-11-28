@@ -72,7 +72,7 @@ export function AdminOverview({
 }: AdminOverviewProps) {
   const [quickUrl, setQuickUrl] = React.useState('');
   const [quickCategory, setQuickCategory] = React.useState(
-    () => categories[0]?.name ?? 'Attachment Theory'
+    () => categories[0]?.name ?? 'Hardcore'
   );
   const [quickDurationMin, setQuickDurationMin] = React.useState(12);
   const greeting = React.useSyncExternalStore(

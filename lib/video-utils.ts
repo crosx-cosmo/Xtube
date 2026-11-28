@@ -392,6 +392,52 @@ export function validateCategoryPayload(input: {
   };
 }
 
+/**
+ * Legacy mock psychology/relationship category IDs and slugs seeded by early builds.
+ * Filtered and pruned so only authentic creator categories (e.g. Hardcore, Xxx) appear.
+ */
+export const LEGACY_MOCK_CATEGORY_IDS = [
+  'cat-attachment',
+  'cat-coregulation',
+  'cat-conflict',
+  'cat-dating',
+  'cat-boundaries',
+  'cat-philosophy',
+] as const;
+
+export const LEGACY_MOCK_CATEGORY_SLUGS = [
+  'attachment-theory',
+  'co-regulation',
+  'conflict-resolution',
+  'dating-dynamics',
+  'emotional-boundaries',
+  'philosophy-of-love',
+  'mindful-dating',
+] as const;
+
+const LEGACY_MOCK_ID_SET = new Set<string>(LEGACY_MOCK_CATEGORY_IDS);
+const LEGACY_MOCK_SLUG_SET = new Set<string>(LEGACY_MOCK_CATEGORY_SLUGS);
+
+export function isLegacyMockCategory(category: {
+  id?: string | null;
+  slug?: string | null;
+  name?: string | null;
+}): boolean {
+  const id = (category.id ?? '').trim().toLowerCase();
+  if (id && LEGACY_MOCK_ID_SET.has(id)) return true;
+
+  const slug = (category.slug ?? '').trim().toLowerCase();
+  if (slug && LEGACY_MOCK_SLUG_SET.has(slug)) return true;
+
+  const normalizedNameSlug = slugifyCategory(category.name ?? '');
+  if (normalizedNameSlug && LEGACY_MOCK_SLUG_SET.has(normalizedNameSlug)) {
+    return true;
+  }
+
+  return false;
+}
+
+
 export interface SocialShareLinks {
   whatsapp: string;
   twitter: string;

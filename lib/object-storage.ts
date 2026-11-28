@@ -263,9 +263,17 @@ export function createThumbnailObjectKey(
   return `thumbnails/${year}/${month}/${id}.${ext}`;
 }
 
+export const ALLOWED_PUBLIC_OBJECT_PREFIXES = new Set([
+  'thumbnails',
+  'bg-images',
+]);
+
+export const STUDIO_GATE_BG_OBJECT_KEY = 'bg-images/1000294410.jpg';
+export const STUDIO_GATE_BG_IMAGE_URL = `/api/thumbnails/${STUDIO_GATE_BG_OBJECT_KEY}`;
+
 /**
  * Validates and normalizes incoming route segments for `/api/thumbnails/[...key]`.
- * Prevents path traversal and limits access strictly to raster images under `thumbnails/`.
+ * Prevents path traversal and limits access strictly to raster images under `thumbnails/` or `bg-images/`.
  */
 export function sanitizeThumbnailObjectKey(
   segments: readonly string[]
@@ -286,7 +294,7 @@ export function sanitizeThumbnailObjectKey(
     cleaned.push(part);
   }
 
-  if (cleaned[0] !== 'thumbnails') {
+  if (!ALLOWED_PUBLIC_OBJECT_PREFIXES.has(cleaned[0])) {
     return null;
   }
 
@@ -485,6 +493,17 @@ export async function uploadThumbnailToObjectStorage(params: {
   };
 }
 
+interface CachedStorageObject {
+  body: ArrayBuffer;
+  contentType: string | null;
+  etag: string | null;
+  expiresAt: number;
+}
+
+const OBJECT_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_CACHED_OBJECTS = 16;
+const objectMemoryCache = new Map<string, CachedStorageObject>();
+
 export async function fetchThumbnailFromObjectStorage(
   objectKey: string,
   config: ObjectStorageConfig = resolveObjectStorageConfig()
@@ -496,6 +515,17 @@ export async function fetchThumbnailFromObjectStorage(
 }> {
   if (!config.configured) {
     return { status: 503, body: null, contentType: null, etag: null };
+  }
+
+  const cacheKey = `${config.bucket}:${objectKey}`;
+  const cached = objectMemoryCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return {
+      status: 200,
+      body: cached.body,
+      contentType: cached.contentType,
+      etag: cached.etag,
+    };
   }
 
   const signed = buildSignedS3Request({
@@ -519,10 +549,26 @@ export async function fetchThumbnailFromObjectStorage(
   }
 
   const body = await response.arrayBuffer();
+  const contentType = response.headers.get('content-type');
+  const etag = response.headers.get('etag');
+
+  if (body.byteLength <= 10 * 1024 * 1024) {
+    if (objectMemoryCache.size >= MAX_CACHED_OBJECTS) {
+      const oldestKey = objectMemoryCache.keys().next().value;
+      if (oldestKey) objectMemoryCache.delete(oldestKey);
+    }
+    objectMemoryCache.set(cacheKey, {
+      body,
+      contentType,
+      etag,
+      expiresAt: Date.now() + OBJECT_CACHE_TTL_MS,
+    });
+  }
+
   return {
     status: 200,
     body,
-    contentType: response.headers.get('content-type'),
-    etag: response.headers.get('etag'),
+    contentType,
+    etag,
   };
 }

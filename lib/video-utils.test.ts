@@ -329,4 +329,76 @@ test('computeWatchProgress calculates clamped percentages, minimum visibility, a
   assert.equal(overshoot.isCompleted, true);
 });
 
+test('isLegacyMockCategory identifies legacy mock categories and preserves real adult categories', async () => {
+  const { isLegacyMockCategory } = await import('./video-utils');
+
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-attachment',
+      name: 'Attachment Theory',
+      slug: 'attachment-theory',
+    }),
+    true
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-coregulation',
+      name: 'Co-Regulation',
+      slug: 'co-regulation',
+    }),
+    true
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-conflict',
+      name: 'Conflict Resolution',
+      slug: 'conflict-resolution',
+    }),
+    true
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-dating',
+      name: 'Dating Dynamics',
+      slug: 'dating-dynamics',
+    }),
+    true
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-boundaries',
+      name: 'Emotional Boundaries',
+      slug: 'emotional-boundaries',
+    }),
+    true
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-philosophy',
+      name: 'Philosophy of Love',
+      slug: 'philosophy-of-love',
+    }),
+    true
+  );
+
+  // Authentic adult categories created by the studio owner remain visible
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-2f5b8c33',
+      name: 'Hardcore',
+      slug: 'hardcore',
+    }),
+    false
+  );
+  assert.equal(
+    isLegacyMockCategory({
+      id: 'cat-a31b637c',
+      name: 'Xxx',
+      slug: 'xxx',
+    }),
+    false
+  );
+});
+
+
 

@@ -1,15 +1,68 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getExpectedAdminToken, isValidAdminToken } from './admin-auth';
+import { isConfiguredPrimaryAdminCredential } from './admin-auth';
 
-test('isValidAdminToken validates matching HMAC tokens and rejects invalid candidates', () => {
-  const expected = getExpectedAdminToken();
-  assert.ok(expected.length === 64, 'HMAC-SHA256 hex token should be 64 characters');
-  assert.equal(isValidAdminToken(expected, expected), true);
-  assert.equal(isValidAdminToken(`  ${expected}  `, expected), true);
-  assert.equal(isValidAdminToken('', expected), false);
-  assert.equal(isValidAdminToken(null, expected), false);
-  assert.equal(isValidAdminToken(undefined, expected), false);
-  assert.equal(isValidAdminToken('wrong-token', expected), false);
-  assert.equal(isValidAdminToken('0'.repeat(64), expected), false);
+test('isConfiguredPrimaryAdminCredential rejects authentication when server env vars are unconfigured', () => {
+  assert.equal(
+    isConfiguredPrimaryAdminCredential('admin@heylady.vip', 'AnyPassword123', {}),
+    false
+  );
+  assert.equal(
+    isConfiguredPrimaryAdminCredential('admin@heylady.vip', 'AnyPassword123', {
+      ADMIN_EMAIL: 'admin@heylady.vip',
+      ADMIN_PASSWORD: '',
+      ADMIN_PASSCODE: '',
+    }),
+    false
+  );
+  assert.equal(
+    isConfiguredPrimaryAdminCredential('admin@heylady.vip', 'AnyPassword123', {
+      ADMIN_EMAIL: '',
+      ADMIN_PASSWORD: 'AnyPassword123',
+    }),
+    false
+  );
 });
+
+test('isConfiguredPrimaryAdminCredential validates matching server-configured ADMIN_EMAIL and ADMIN_PASSWORD/ADMIN_PASSCODE', () => {
+  const mockEnv = {
+    ADMIN_EMAIL: 'studio-owner@heylady.vip',
+    ADMIN_PASSWORD: 'TestOnlyEnvPassword!2026',
+    ADMIN_PASSCODE: 'TestOnlyEnvPasscode!2026',
+  };
+
+  assert.equal(
+    isConfiguredPrimaryAdminCredential(
+      'studio-owner@heylady.vip',
+      'TestOnlyEnvPassword!2026',
+      mockEnv
+    ),
+    true
+  );
+  assert.equal(
+    isConfiguredPrimaryAdminCredential(
+      '  STUDIO-OWNER@HEYLADY.VIP ',
+      'TestOnlyEnvPasscode!2026',
+      mockEnv
+    ),
+    true
+  );
+  assert.equal(
+    isConfiguredPrimaryAdminCredential(
+      'studio-owner@heylady.vip',
+      'WrongPassword123',
+      mockEnv
+    ),
+    false
+  );
+  assert.equal(
+    isConfiguredPrimaryAdminCredential(
+      'unknown@example.com',
+      'TestOnlyEnvPassword!2026',
+      mockEnv
+    ),
+    false
+  );
+  assert.equal(isConfiguredPrimaryAdminCredential('', '', mockEnv), false);
+});
+

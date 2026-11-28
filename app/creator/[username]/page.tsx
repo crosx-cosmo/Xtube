@@ -6,6 +6,7 @@ import {
   buildBreadcrumbJsonLd,
   buildCanonicalUrl,
   buildCreatorJsonLd,
+  serializeJsonLd,
   SITE_KEYWORDS,
   SITE_NAME,
 } from '@/lib/seo';
@@ -65,10 +66,10 @@ export default async function CreatorPage({ params }: CreatorPageProps) {
     notFound();
   }
 
-  const creatorJsonLd = JSON.stringify(
+  const creatorJsonLd = serializeJsonLd(
     buildCreatorJsonLd(profile.creator, profile.videos)
   );
-  const breadcrumbJsonLd = JSON.stringify(
+  const breadcrumbJsonLd = serializeJsonLd(
     buildBreadcrumbJsonLd([
       { name: 'Home', path: '/' },
       { name: 'VIP Creators', path: '/educators' },

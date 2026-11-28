@@ -3,16 +3,18 @@
 import * as React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ExternalLink,
+  Check,
+  Copy,
   Pause,
   Play,
   RectangleHorizontal,
+  Share2,
   Sparkles,
 } from 'lucide-react';
+import { buildWatchShareUrl, copyTextToClipboard } from '@/lib/api-client';
 import type { ContentRatingCode } from '@/lib/content-rating';
 import type { VideoChapter } from '@/lib/types';
 import {
-  extractSourceHost,
   formatDuration,
   getActiveChapterIndex,
 } from '@/lib/video-utils';
@@ -20,6 +22,7 @@ import { ContentRatingBadge } from '@/components/content-rating-badge';
 import { cn } from '@/lib/utils';
 
 interface VideoPlayerProps {
+  videoId?: string;
   title: string;
   videoUrl: string;
   thumbnailUrl: string;
@@ -33,9 +36,11 @@ interface VideoPlayerProps {
   theaterMode: boolean;
   onToggleTheater: () => void;
   onPlayRedirect?: () => void;
+  onShare?: () => void;
 }
 
 export function VideoPlayer({
+  videoId,
   title,
   videoUrl,
   thumbnailUrl,
@@ -44,21 +49,18 @@ export function VideoPlayer({
   chapters,
   currentTime,
   onTimeUpdate,
-  onUserSeek,
   seekRequest,
   theaterMode,
   onToggleTheater,
   onPlayRedirect,
 }: VideoPlayerProps) {
-  const scrubRef = React.useRef<HTMLDivElement>(null);
   const duration = Math.max(1, durationSeconds);
-  const sourceHost = extractSourceHost(videoUrl);
 
   // Ambient autoplay preview cycles smoothly through chapter highlights on the thumbnail stage
   const [isAutoPreview, setIsAutoPreview] = React.useState(true);
-  const [hoverTime, setHoverTime] = React.useState<number | null>(null);
-  const [hoverLeftPct, setHoverLeftPct] = React.useState<number>(0);
   const [redirectNotice, setRedirectNotice] = React.useState(false);
+  const [copiedLink, setCopiedLink] = React.useState<string | null>(null);
+  const copyTimerRef = React.useRef<number | null>(null);
 
   const activeChapterIdx = getActiveChapterIndex(chapters, currentTime);
   const activeChapter = activeChapterIdx >= 0 ? chapters[activeChapterIdx] : null;
@@ -80,22 +82,13 @@ export function VideoPlayer({
     return () => window.clearInterval(interval);
   }, [isAutoPreview, currentTime, duration, onTimeUpdate]);
 
-  const handleScrubPointer = (clientX: number) => {
-    const rect = scrubRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const nextSeconds = ratio * duration;
-    onTimeUpdate(nextSeconds);
-    onUserSeek?.(nextSeconds);
-  };
-
-  const handleScrubHover = (clientX: number) => {
-    const rect = scrubRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    setHoverLeftPct(ratio * 100);
-    setHoverTime(ratio * duration);
-  };
+  React.useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleTriggerRedirect = () => {
     setRedirectNotice(true);
@@ -103,18 +96,31 @@ export function VideoPlayer({
     window.setTimeout(() => setRedirectNotice(false), 3000);
   };
 
-  const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const handleCopyShareLink = async () => {
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : 'https://heylady.app';
+    const currentHref =
+      typeof window !== 'undefined' ? window.location.href : '';
+    const shareUrl = buildWatchShareUrl(videoId, origin, currentHref);
+    await copyTextToClipboard(shareUrl);
+    setCopiedLink(shareUrl);
+    if (copyTimerRef.current) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopiedLink(null);
+    }, 3200);
+  };
 
   return (
     <div
       data-testid="video-player"
       data-vt-role="poster"
       data-theater={theaterMode ? 'true' : 'false'}
-      data-source-url={videoUrl}
       className={cn(
         'relative w-full overflow-hidden bg-black text-white select-none group/player',
         theaterMode
-          ? 'aspect-[21/9] max-h-[75vh] rounded-none sm:rounded-xl'
+          ? 'aspect-[21/9] max-h-[75dvh] rounded-none sm:rounded-xl'
           : 'aspect-video rounded-xl ring-1 ring-white/10'
       )}
     >
@@ -139,7 +145,7 @@ export function VideoPlayer({
           className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-black/40"
         />
 
-        {/* Player Header Bar: 18+ Content Rating Transparency + Original Source + Duration */}
+        {/* Player Header Bar: 18+ Content Rating Transparency + Duration (Original Source Hidden) */}
         <div
           data-testid="video-player-header"
           className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 z-20 pointer-events-none"
@@ -150,17 +156,13 @@ export function VideoPlayer({
               variant="player-overlay"
               interactive
             />
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/75 border border-white/10 px-2.5 py-1 text-xs font-medium text-zinc-100 backdrop-blur-md truncate">
-              <ExternalLink className="h-3.5 w-3.5 text-rose-400 shrink-0" aria-hidden="true" />
-              <span className="truncate">Original Source · {sourceHost}</span>
-            </span>
           </div>
-          <span className="rounded-lg bg-black/75 border border-white/10 px-2 py-1 font-mono text-xs text-zinc-200 tabular-nums backdrop-blur-md shrink-0">
+          <span className="rounded-lg bg-black/75 border border-white/10 px-2.5 py-1 font-mono text-xs text-zinc-200 tabular-nums backdrop-blur-md shrink-0">
             {formatDuration(duration)}
           </span>
         </div>
 
-        {/* Center Play Action — Direct External Link Redirect (No Video Hosting Required) */}
+        {/* Center Play Action — Official Stream Launch without Exposing Source Host */}
         <div className="absolute inset-0 flex flex-col items-center justify-center px-4 pb-9 sm:pb-0 text-center z-10">
           <a
             href={videoUrl}
@@ -168,25 +170,61 @@ export function VideoPlayer({
             rel="noopener noreferrer"
             onClick={handleTriggerRedirect}
             data-testid="play-redirect-link"
-            aria-label={`Play original video on ${sourceHost}`}
+            aria-label={`Watch ${title}`}
             className="group/play inline-flex flex-col items-center gap-2.5 sm:gap-3 focus-visible:outline-none"
           >
             <motion.span
               whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.94 }}
-              className="flex h-12 w-12 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-rose-600 text-white shadow-[0_0_40px_rgba(225,29,72,0.55)] ring-4 ring-rose-500/25 group-hover/play:bg-rose-500 transition-colors"
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              className="flex h-12 w-12 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-rose-600 text-white shadow-[0_0_2.5rem_rgba(225,29,72,0.55)] ring-4 ring-rose-500/25 group-hover/play:bg-rose-500 transition-colors"
             >
               <Play className="h-5 w-5 sm:h-9 sm:w-9 fill-current ml-0.5 sm:ml-1" />
             </motion.span>
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-black/80 border border-white/15 px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-white backdrop-blur-md group-hover/play:border-rose-500/60 transition-colors">
-              <span>{redirectNotice ? `Opening ${sourceHost}...` : `Play Original Video on ${sourceHost}`}</span>
-              <ExternalLink className="h-3.5 w-3.5 text-rose-400" aria-hidden="true" />
-            </span>
+            <motion.span
+              whileHover={{ y: -1, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-black/80 border border-white/15 px-4 py-1.5 text-xs sm:text-sm font-semibold text-white backdrop-blur-md group-hover/play:border-rose-500/60 transition-colors"
+            >
+              <span>{redirectNotice ? 'Opening Stream...' : 'Watch Now'}</span>
+            </motion.span>
           </a>
         </div>
 
+        {/* Clipboard Share Link Toast Banner Inside Player */}
+        <AnimatePresence>
+          {copiedLink && (
+            <motion.div
+              data-testid="video-player-share-toast"
+              role="status"
+              aria-live="polite"
+              initial={{ opacity: 0, y: 10, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+              className="absolute right-3 bottom-14 z-30 flex max-w-[min(92%,24rem)] items-center gap-2 rounded-xl border border-emerald-400/35 bg-zinc-950/92 px-3 py-2 text-xs text-zinc-100 shadow-xl backdrop-blur-md"
+            >
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-emerald-300 leading-tight">
+                  Link copied to clipboard
+                </p>
+                <p
+                  data-testid="video-player-share-url"
+                  className="mt-0.5 truncate font-mono text-[0.6875rem] text-zinc-300 select-all"
+                >
+                  {copiedLink}
+                </p>
+              </div>
+              <Copy className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Active Chapter Preview Overlay */}
-        <div className="absolute inset-x-0 bottom-20 px-4 sm:px-6 pointer-events-none z-10 hidden sm:block">
+        <div className="absolute inset-x-0 bottom-16 px-4 sm:px-6 pointer-events-none z-10 hidden sm:block">
           <AnimatePresence mode="wait">
             {activeChapter && (
               <motion.div
@@ -210,89 +248,28 @@ export function VideoPlayer({
         </div>
       </div>
 
-      {/* Bottom Streaming Bar */}
-      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-4 pt-8 pb-3">
-        {/* Interactive Chapter Preview Timeline */}
-        <div
-          ref={scrubRef}
-          role="slider"
-          tabIndex={0}
-          aria-label="Preview chapter timeline"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(duration)}
-          aria-valuenow={Math.round(currentTime)}
-          aria-valuetext={`${formatDuration(currentTime)} of ${formatDuration(duration)}`}
-          onClick={(e) => handleScrubPointer(e.clientX)}
-          onMouseMove={(e) => handleScrubHover(e.clientX)}
-          onMouseLeave={() => setHoverTime(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowRight') {
-              const nextSeconds = Math.min(duration, currentTime + 15);
-              onTimeUpdate(nextSeconds);
-              onUserSeek?.(nextSeconds);
-            }
-            if (e.key === 'ArrowLeft') {
-              const nextSeconds = Math.max(0, currentTime - 15);
-              onTimeUpdate(nextSeconds);
-              onUserSeek?.(nextSeconds);
-            }
-          }}
-          className="group/scrub relative mb-2.5 flex h-4 cursor-pointer items-center focus-visible:outline-none"
-        >
-          {hoverTime !== null && (
-            <div
-              style={{ left: `${hoverLeftPct}%` }}
-              className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-zinc-950/95 px-2 py-0.5 font-mono text-[0.6875rem] text-white tabular-nums ring-1 ring-white/10"
-            >
-              {formatDuration(hoverTime)}
-            </div>
-          )}
-
-          <div className="relative h-1 w-full rounded-full bg-white/25 overflow-hidden group-hover/scrub:h-1.5 transition-all">
-            <div
-              className="h-full bg-rose-600 transition-[width] duration-150"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-
-          {chapters.map((ch) => {
-            const leftPct = duration > 0 ? (ch.timestampSeconds / duration) * 100 : 0;
-            if (leftPct <= 0 || leftPct >= 100) return null;
-            return (
-              <span
-                key={ch.id}
-                aria-hidden="true"
-                style={{ left: `${leftPct}%` }}
-                className="pointer-events-none absolute h-2.5 w-0.5 -translate-x-1/2 bg-black/80"
-              />
-            );
-          })}
-
-          <div
-            aria-hidden="true"
-            style={{ left: `${progressPct}%` }}
-            className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-rose-500 shadow ring-2 ring-white opacity-0 group-hover/scrub:opacity-100 transition-opacity"
-          />
-        </div>
-
-        {/* Bottom Controls Row */}
+      {/* Bottom Streaming Bar (Clean Controls + Clipboard Share Button + Theater Toggle) */}
+      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/75 to-transparent px-4 pt-6 pb-3">
         <div className="flex items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <a
+            <motion.a
               href={videoUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleTriggerRedirect}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500 transition-colors whitespace-nowrap shrink-0"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.95 }}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 text-xs font-semibold text-white hover:bg-rose-500 transition-colors whitespace-nowrap shrink-0"
             >
               <Play className="h-3.5 w-3.5 fill-current" />
-              <span>Watch Source</span>
-              <ExternalLink className="h-3 w-3 opacity-85" aria-hidden="true" />
-            </a>
+              <span>Watch Now</span>
+            </motion.a>
 
-            <button
+            <motion.button
               type="button"
               onClick={() => setIsAutoPreview((p) => !p)}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.95 }}
               aria-pressed={isAutoPreview}
               aria-label={isAutoPreview ? 'Pause thumbnail preview' : 'Enable autoplay preview'}
               className={cn(
@@ -310,17 +287,45 @@ export function VideoPlayer({
               <span className="hidden sm:inline">
                 {isAutoPreview ? 'Autoplay Preview' : 'Preview Paused'}
               </span>
-            </button>
-
-            <span className="hidden md:inline font-mono text-xs text-zinc-300 tabular-nums whitespace-nowrap">
-              {formatDuration(currentTime)} / {formatDuration(duration)}
-            </span>
+            </motion.button>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
+            <motion.button
+              type="button"
+              data-testid="video-player-share-btn"
+              onClick={handleCopyShareLink}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.94 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 20 }}
+              aria-label={
+                copiedLink ? 'Video link copied to clipboard' : 'Copy shareable link for this video'
+              }
+              className={cn(
+                'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap',
+                copiedLink
+                  ? 'bg-emerald-600/90 text-white'
+                  : 'bg-white/12 text-zinc-100 hover:bg-white/20'
+              )}
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Share</span>
+                </>
+              )}
+            </motion.button>
+
+            <motion.button
               type="button"
               onClick={onToggleTheater}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.94 }}
               aria-label={theaterMode ? 'Exit theater mode' : 'Enter theater mode'}
               aria-pressed={theaterMode}
               className={cn(
@@ -332,10 +337,11 @@ export function VideoPlayer({
             >
               <RectangleHorizontal className="h-4 w-4" />
               <span className="hidden sm:inline">Theater</span>
-            </button>
+            </motion.button>
           </div>
         </div>
       </div>
     </div>
   );
 }
+

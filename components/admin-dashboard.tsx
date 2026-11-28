@@ -19,6 +19,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type {
   AdminCommentItem,
   AdminDashboardStats,
@@ -76,7 +77,6 @@ const DEFAULT_CHAPTERS: UploadChapterInput[] = [
   { timestamp: '02:30', title: 'Core Psychology Framework' },
 ];
 
-const ADMIN_TOKEN_STORAGE_KEY = 'kinship_admin_token';
 const MAX_THUMBNAIL_BYTES = 10 * 1024 * 1024;
 const ALLOWED_THUMBNAIL_TYPES = new Set([
   'image/png',
@@ -290,34 +290,11 @@ export function AdminDashboard({
 
   const getAdminToken = React.useCallback((override?: string): string | null => {
     if (override) return override;
-    if (adminTokenRef.current) return adminTokenRef.current;
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
-        if (stored) {
-          adminTokenRef.current = stored;
-          return stored;
-        }
-      } catch {
-        // Ignore restricted storage environments
-      }
-    }
-    return null;
+    return adminTokenRef.current;
   }, []);
 
   const persistAdminToken = React.useCallback((token: string | null) => {
     adminTokenRef.current = token;
-    if (typeof window !== 'undefined') {
-      try {
-        if (token) {
-          window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
-        } else {
-          window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
-        }
-      } catch {
-        // Ignore restricted storage environments
-      }
-    }
   }, []);
 
   const getAdminHeaders = React.useCallback(
@@ -413,7 +390,7 @@ export function AdminDashboard({
     [expireAdminSession, getAdminHeaders]
   );
 
-  // Restore active admin session from sessionStorage when third-party iframe cookies are blocked
+  // Verify active in-memory admin session token when third-party iframe cookies are restricted
   React.useEffect(() => {
     if (initialAuthenticated) return;
     const storedToken = getAdminToken();
@@ -1303,29 +1280,34 @@ export function AdminDashboard({
             </div>
           </button>
 
-          <button
+          <motion.button
             type="button"
+            whileHover={{ scale: 1.12, rotate: 90 }}
+            whileTap={{ scale: 0.88, rotate: 180 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 20 }}
             onClick={() => setMobileNavOpen(false)}
             aria-label="Close studio sidebar"
             className="lg:hidden inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/[0.08] hover:text-white cursor-pointer"
           >
             <X className="h-4 w-4" aria-hidden="true" />
-          </button>
+          </motion.button>
         </div>
 
         {/* Crisp Pure-White Primary Action CTA (Exact Mirror of Reference Sidebar) */}
-        <button
+        <motion.button
           type="button"
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.97 }}
           data-testid="studio-sidebar-add-btn"
           onClick={() => {
             resetForm();
             navigateTab('links');
           }}
-          className="flex h-9 w-full items-center justify-between rounded-xl bg-white px-3.5 text-xs font-semibold text-[#090808] hover:bg-zinc-100 active:scale-[0.98] transition-all cursor-pointer shadow-md shadow-black/30"
+          className="flex h-9 w-full items-center justify-between rounded-xl bg-white px-3.5 text-xs font-semibold text-[#090808] hover:bg-zinc-100 transition-colors cursor-pointer shadow-md shadow-black/30"
         >
           <span>New video link</span>
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
+        </motion.button>
 
         {/* Workspace Navigation */}
         <div>
@@ -1553,15 +1535,17 @@ export function AdminDashboard({
             </div>
           </div>
 
-          <button
+          <motion.button
             type="button"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={handleLogout}
             aria-label="Sign Out"
             title="Sign Out"
             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-500/15 hover:text-rose-300 transition-colors cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          </motion.button>
         </div>
       </div>
     </div>
@@ -1581,33 +1565,48 @@ export function AdminDashboard({
       </aside>
 
       {/* Mobile Slide-Over Studio Drawer */}
-      {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation drawer"
-            onClick={() => setMobileNavOpen(false)}
-            className="fixed inset-0 bg-black/75 backdrop-blur-xs cursor-default"
-          />
-          <aside className="relative z-10 w-[min(82vw,16.5rem)] max-w-[84vw] h-full overflow-y-auto border-r border-white/10 bg-[#0D0B0B] px-4 py-4 shadow-2xl">
-            {sidebarContent}
-          </aside>
-        </div>
-      )}
+      <AnimatePresence>
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-50 flex lg:hidden">
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              aria-label="Close navigation drawer"
+              onClick={() => setMobileNavOpen(false)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-xs cursor-default"
+            />
+            <motion.aside
+              initial={{ x: '-100%', opacity: 0.6 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '-100%', opacity: 0.6 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="relative z-10 w-[min(82vw,16.5rem)] max-w-[84vw] h-full overflow-y-auto border-r border-white/10 bg-[#0D0B0B] px-4 py-4 shadow-2xl"
+            >
+              {sidebarContent}
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Main Studio Surface */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Studio Breadcrumb & Utility Bar */}
         <header className="sticky top-0 z-30 h-14 border-b border-white/[0.06] bg-[#080707]/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <button
+            <motion.button
               type="button"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.88, rotate: -10 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 20 }}
               onClick={() => setMobileNavOpen(true)}
               aria-label="Open studio navigation"
               className="lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.1] cursor-pointer"
             >
               <Menu className="h-4 w-4" aria-hidden="true" />
-            </button>
+            </motion.button>
 
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs truncate">
               <button

@@ -91,14 +91,24 @@ export function AdminAuthGate({
 }: AdminAuthGateProps) {
   return (
     <div className="relative min-h-dvh w-full overflow-hidden bg-[#080707] text-zinc-100 flex flex-col">
+      {/* Semi-Transparent Bucket Background Image (hey-lady/bg-images/1000294410.jpg) */}
+      <div
+        aria-hidden="true"
+        data-testid="admin-auth-bg-image"
+        className="pointer-events-none fixed inset-0 bg-[url('/api/thumbnails/bg-images/1000294410.jpg')] bg-cover bg-center bg-no-repeat opacity-45"
+      />
       {/* Signature Warm Copper Atmospheric Backdrop */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_62%_46%_at_50%_18%,rgba(234,88,12,0.28),rgba(154,52,18,0.12)_48%,transparent_76%)]"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_62%_46%_at_50%_18%,rgba(234,88,12,0.26),rgba(154,52,18,0.14)_48%,rgba(8,7,7,0.80)_82%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 bg-gradient-to-b from-black/48 via-[#080707]/58 to-black/80"
       />
 
       {/* Minimal Top Bar */}
-      <header className="relative z-10 flex items-center justify-between px-5 sm:px-8 h-16 border-b border-white/[0.06]">
+      <header className="relative z-10 flex items-center justify-between px-5 sm:px-8 h-16 border-b border-white/[0.08] bg-black/45">
         <Link
           href="/"
           aria-label="Hey Lady Home"
@@ -112,21 +122,22 @@ export function AdminAuthGate({
 
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-white/20 hover:bg-white/[0.08] hover:text-white transition-colors whitespace-nowrap"
+          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-white/20 hover:bg-white/[0.08] hover:text-white active:scale-95 transition-all whitespace-nowrap"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           <span>Back to Feed</span>
         </Link>
       </header>
 
-      {/* Centered Obsidian Glass Auth Card */}
-      <div className="relative z-10 flex-1 flex items-center justify-center px-4 py-10 sm:py-14">
+      {/* Centered Obsidian Glass Auth Card (Top-balanced on tall mobile portrait viewports) */}
+      <div className="relative z-10 flex-1 flex items-start sm:items-center justify-center px-4 pt-8 pb-10 sm:py-14">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full max-w-[26.875rem] rounded-[1.625rem] border border-white/10 bg-[#121010]/90 backdrop-blur-xl p-6 sm:p-8 shadow-[0_28px_80px_rgba(0,0,0,0.65)]"
+          className="relative overflow-hidden w-full max-w-[26.875rem] rounded-[1.625rem] border border-white/15 bg-[#121010]/72 p-6 sm:p-8 shadow-[0_28px_80px_rgba(0,0,0,0.75)]"
         >
+          <div className="relative z-10">
           <div className="flex items-center justify-between gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 text-orange-400 border border-orange-500/25">
               {authView === 'login' ? (
@@ -211,14 +222,16 @@ export function AdminAuthGate({
                     >
                       Password
                     </label>
-                    <button
+                    <motion.button
                       type="button"
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.95 }}
                       data-testid="admin-forgot-password-btn"
                       onClick={() => onSwitchView('reset-request')}
                       className="text-xs font-medium text-orange-400 hover:text-orange-300 hover:underline cursor-pointer"
                     >
                       Forgot password?
-                    </button>
+                    </motion.button>
                   </div>
                   <div className="relative">
                     <Lock
@@ -235,8 +248,10 @@ export function AdminAuthGate({
                       placeholder="Enter password"
                       className="studio-input h-11 w-full rounded-xl border border-white/10 bg-[#0A0909] pl-10 pr-10 text-sm text-white placeholder:text-zinc-500 focus:border-orange-500/70 focus:ring-2 focus:ring-orange-500/15 focus:outline-none transition-all"
                     />
-                    <button
+                    <motion.button
                       type="button"
+                      whileHover={{ scale: 1.15 }}
+                      whileTap={{ scale: 0.88 }}
                       onClick={onToggleShowPassword}
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 cursor-pointer"
@@ -246,7 +261,7 @@ export function AdminAuthGate({
                       ) : (
                         <Eye className="h-4 w-4" aria-hidden="true" />
                       )}
-                    </button>
+                    </motion.button>
                   </div>
                   {authFieldErrors.password && (
                     <p className="mt-1.5 text-xs text-rose-400">{authFieldErrors.password}</p>
@@ -262,13 +277,15 @@ export function AdminAuthGate({
                   </p>
                 )}
 
-                <button
+                <motion.button
                   type="submit"
                   disabled={authLoading}
-                  className="h-11 w-full rounded-xl bg-white text-[#090808] text-sm font-semibold hover:bg-zinc-100 active:scale-[0.99] disabled:opacity-60 transition-all cursor-pointer shadow-lg shadow-white/5"
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="h-11 w-full rounded-xl bg-white text-[#090808] text-sm font-semibold hover:bg-zinc-100 disabled:opacity-60 transition-colors cursor-pointer shadow-lg shadow-white/5"
                 >
                   {authLoading ? 'Signing In...' : 'Sign In to Studio'}
-                </button>
+                </motion.button>
               </form>
             </>
           )}
@@ -592,6 +609,7 @@ export function AdminAuthGate({
             <Link href="/" className="text-zinc-300 hover:text-white underline shrink-0">
               View Public Site
             </Link>
+          </div>
           </div>
         </motion.div>
       </div>

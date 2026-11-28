@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import gsap from 'gsap';
 import {
   BadgeCheck,
   ChevronDown,
@@ -21,15 +22,23 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import type { Category, User, VideoWithMeta, WatchHistoryEntry } from '@/lib/types';
-import { computeWatchProgress, formatDuration, formatViews } from '@/lib/video-utils';
+import { requestApiJson } from '@/lib/api-client';
+import { formatDuration, formatViews } from '@/lib/video-utils';
 import {
   resolveVideoProgressSeconds,
   useWatchProgressMap,
 } from '@/lib/watch-progress-store';
+import {
+  AdultNeonWatermarkSeal,
+  AdultStickerCluster,
+  AdultStickerStamp,
+} from '@/components/adult-stickers';
 import { ParticleOrbCrest } from '@/components/brand-logo';
 import { ContentRatingBadge } from '@/components/content-rating-badge';
 import { VideoCard } from '@/components/video-card';
+import { VideoGridSkeleton } from '@/components/video-card-skeleton';
 import { EducatorAvatar } from '@/components/ui/avatar';
+import { getHomeFeedSkeletonCounts } from '@/lib/theme-utils';
 import { ShareModal, type ShareTarget } from '@/components/share-modal';
 import { useImmersiveScroll } from '@/components/scroll-immersive-context';
 import { Button } from '@/components/ui/button';
@@ -70,6 +79,7 @@ interface HomeFeedProps {
   initialHistory?: WatchHistoryEntry[];
   initialCategorySlug?: string;
   initialSearchQuery?: string;
+  isLoading?: boolean;
 }
 
 export function HomeFeed({
@@ -79,6 +89,7 @@ export function HomeFeed({
   initialHistory = [],
   initialCategorySlug = 'all',
   initialSearchQuery = '',
+  isLoading = false,
 }: HomeFeedProps) {
   const [videos, setVideos] = React.useState<VideoWithMeta[]>(initialVideos);
   const [activeCategory, setActiveCategory] = React.useState<string>(initialCategorySlug);
@@ -86,13 +97,119 @@ export function HomeFeed({
   const [sortBy, setSortBy] = React.useState<SortOption>('recommended');
   const [heroIndex, setHeroIndex] = React.useState(0);
   const [shareTarget, setShareTarget] = React.useState<ShareTarget | null>(null);
+  const [isFetchingVideos, setIsFetchingVideos] = React.useState(false);
+  const fetchSeqRef = React.useRef(0);
   const localProgressMap = useWatchProgressMap();
   const { isImmersiveScroll } = useImmersiveScroll();
+  const feedContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const isGridLoading = Boolean(isLoading) || isFetchingVideos;
+
+  const fetchCatalogForFilter = React.useCallback(
+    async (categorySlug: string) => {
+      const seq = ++fetchSeqRef.current;
+      setIsFetchingVideos(true);
+      try {
+        const params = new URLSearchParams();
+        if (categorySlug && categorySlug !== 'all') {
+          params.set('category', categorySlug);
+        }
+        if (initialSearchQuery.trim()) {
+          params.set('search', initialSearchQuery.trim());
+        }
+        const queryString = params.toString();
+        const url = queryString ? `/api/videos?${queryString}` : '/api/videos';
+        const { ok, data } = await requestApiJson<{ videos?: VideoWithMeta[] }>(url);
+        if (seq === fetchSeqRef.current && ok && Array.isArray(data?.videos)) {
+          setVideos((prev) => {
+            if (categorySlug === 'all' && !initialSearchQuery.trim()) {
+              return data.videos!;
+            }
+            const byId = new Map(prev.map((item) => [item.id, item]));
+            for (const item of data.videos!) {
+              byId.set(item.id, item);
+            }
+            return Array.from(byId.values());
+          });
+        }
+      } catch {
+        // Keep existing cached videos if offline
+      } finally {
+        if (seq === fetchSeqRef.current) {
+          setIsFetchingVideos(false);
+        }
+      }
+    },
+    [initialSearchQuery]
+  );
+
+  const handleSelectCategory = React.useCallback(
+    (nextSlug: string) => {
+      setActiveCategory(nextSlug);
+      if (nextSlug !== activeCategory) {
+        void fetchCatalogForFilter(nextSlug);
+      }
+    },
+    [activeCategory, fetchCatalogForFilter]
+  );
+
+  const handleSelectSort = React.useCallback(
+    (nextSort: SortOption) => {
+      setSortBy(nextSort);
+      if (nextSort !== sortBy) {
+        void fetchCatalogForFilter(activeCategory);
+      }
+    },
+    [activeCategory, fetchCatalogForFilter, sortBy]
+  );
 
   if (initialCategorySlug !== prevCategorySlug) {
     setPrevCategorySlug(initialCategorySlug);
     setActiveCategory(initialCategorySlug);
   }
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const container = feedContainerRef.current;
+    if (!container) return;
+
+    const ctx = gsap.context(() => {
+      const pills = container.querySelectorAll('[data-gsap-pill]');
+      if (pills.length > 0) {
+        gsap.fromTo(
+          pills,
+          { opacity: 0, y: -6 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.3,
+            stagger: 0.025,
+            ease: 'power2.out',
+            clearProps: 'transform,opacity',
+          }
+        );
+      }
+
+      const hero = container.querySelector('[data-testid="hero-spotlight"]');
+      if (hero) {
+        gsap.fromTo(
+          hero,
+          { opacity: 0, y: 14, scale: 0.992 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.45,
+            ease: 'power3.out',
+            clearProps: 'transform,opacity',
+          }
+        );
+      }
+    }, container);
+
+    return () => ctx.revert();
+  }, [activeCategory]);
 
   const filteredVideos = React.useMemo(() => {
     const q = initialSearchQuery.trim().toLowerCase();
@@ -121,6 +238,9 @@ export function HomeFeed({
 
   const showCuratedHome =
     activeCategory === 'all' && !initialSearchQuery.trim() && filteredVideos.length > 0;
+  const skeletonCounts = getHomeFeedSkeletonCounts(
+    activeCategory === 'all' && !initialSearchQuery.trim()
+  );
 
   // Top 4 spotlight videos for the interactive Hero Carousel (Reference 2 ↑/↓ controls)
   const heroVideos = React.useMemo(() => {
@@ -130,16 +250,6 @@ export function HomeFeed({
 
   const safeHeroIndex = heroVideos.length > 0 ? heroIndex % heroVideos.length : 0;
   const featuredVideo = heroVideos[safeHeroIndex] ?? null;
-
-  const featuredProgress = React.useMemo(() => {
-    if (!featuredVideo) return null;
-    const secs = resolveVideoProgressSeconds(
-      featuredVideo.id,
-      featuredVideo.watchProgressSeconds,
-      localProgressMap
-    );
-    return computeWatchProgress(secs, featuredVideo.durationSeconds);
-  }, [featuredVideo, localProgressMap]);
 
   // Split curated view cleanly into "Trending Now" (top 3) + "You Might Like" (rest)
   const { trendingRow, discoveryRow } = React.useMemo(() => {
@@ -227,21 +337,17 @@ export function HomeFeed({
       )
     );
 
-    try {
-      const res = await fetch('/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setVideos((prev) =>
-          prev.map((v) =>
-            v.id === videoId ? { ...v, isBookmarked: Boolean(data.isBookmarked) } : v
-          )
-        );
-      }
-    } catch {
+    const { ok, data } = await requestApiJson<{ isBookmarked: boolean }>(
+      '/api/bookmarks',
+      { method: 'POST', json: { videoId } }
+    );
+    if (ok && data) {
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === videoId ? { ...v, isBookmarked: Boolean(data.isBookmarked) } : v
+        )
+      );
+    } else {
       setVideos((prev) =>
         prev.map((v) =>
           v.id === videoId ? { ...v, isBookmarked: !v.isBookmarked } : v
@@ -256,7 +362,7 @@ export function HomeFeed({
   };
 
   return (
-    <div className="min-h-full">
+    <div ref={feedContainerRef} className="min-h-full">
       {/* Main 2-Column Content Split (Center Cinema + Right Continue-Watching Rail = 3 Columns with Left Sidebar) */}
       <div
         className={cn(
@@ -277,39 +383,45 @@ export function HomeFeed({
                 aria-label="Topic categories"
                 className="flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 pr-2"
               >
-                <button
+                <motion.button
                   type="button"
                   role="tab"
+                  data-gsap-pill
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.95 }}
                   aria-selected={activeCategory === 'all'}
-                  onClick={() => setActiveCategory('all')}
+                  onClick={() => handleSelectCategory('all')}
                   className={cn(
-                    'h-9 px-4 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer',
+                    'h-9 px-4 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer',
                     activeCategory === 'all'
                       ? 'bg-rose-600 text-white font-semibold shadow-sm shadow-rose-600/25'
                       : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-[#181820] hover:text-zinc-950 dark:hover:text-white'
                   )}
                 >
                   All
-                </button>
+                </motion.button>
 
                 {categories.map((cat) => {
                   const selected = activeCategory === cat.slug;
                   return (
-                    <button
+                    <motion.button
                       key={cat.id}
                       type="button"
                       role="tab"
+                      data-gsap-pill
+                      whileHover={{ y: -1 }}
+                      whileTap={{ scale: 0.95 }}
                       aria-selected={selected}
-                      onClick={() => setActiveCategory(cat.slug)}
+                      onClick={() => handleSelectCategory(cat.slug)}
                       className={cn(
-                        'h-9 px-4 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer',
+                        'h-9 px-4 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer',
                         selected
                           ? 'bg-rose-600 text-white font-semibold shadow-sm shadow-rose-600/25'
                           : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-[#181820] hover:text-zinc-950 dark:hover:text-white'
                       )}
                     >
                       {cat.name}
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
@@ -321,7 +433,7 @@ export function HomeFeed({
                   testId="feed-sort-dropdown"
                   value={sortBy}
                   options={SORT_OPTIONS}
-                  onChange={setSortBy}
+                  onChange={handleSelectSort}
                   ariaLabel="Sort videos"
                   menuLabel="Sort videos by"
                   leadingIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
@@ -406,6 +518,17 @@ export function HomeFeed({
                         />
                         <span>Trending Now</span>
                       </span>
+                      <AdultStickerStamp
+                        kind="xxx-uncensored"
+                        size="xs"
+                        tilted
+                      />
+                      <AdultStickerStamp
+                        kind="hot-vip"
+                        size="xs"
+                        tilted
+                        className="hidden md:inline-flex"
+                      />
                       <span className="hidden sm:inline text-xs font-medium text-zinc-200/90">
                         {featuredVideo.category.name}
                       </span>
@@ -456,26 +579,24 @@ export function HomeFeed({
                           href={`/watch/${featuredVideo.id}`}
                           videoId={featuredVideo.id}
                           data-testid="hero-watch-cta"
-                          className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-zinc-950 shadow-lg hover:bg-zinc-100 active:scale-[0.98] transition-all whitespace-nowrap"
+                          className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-zinc-950 shadow-lg hover:bg-zinc-100 hover:scale-[1.03] active:scale-[0.96] transition-all whitespace-nowrap"
                         >
                           <Play className="h-4 w-4 fill-current" aria-hidden="true" />
-                          <span>
-                            {featuredProgress?.hasProgress && !featuredProgress.isCompleted
-                              ? 'Resume'
-                              : 'Watch'}
-                          </span>
+                          <span>Watch</span>
                         </TransitionLink>
 
-                        <button
+                        <motion.button
                           type="button"
                           onClick={() => handleToggleBookmark(featuredVideo.id)}
+                          whileHover={{ scale: 1.04 }}
+                          whileTap={{ scale: 0.94 }}
                           aria-label={
                             featuredVideo.isBookmarked
                               ? `Remove ${featuredVideo.title} from favorites`
                               : `Save ${featuredVideo.title} to favorites`
                           }
                           className={cn(
-                            'inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-medium backdrop-blur-md border transition-all cursor-pointer whitespace-nowrap',
+                            'inline-flex h-11 items-center gap-2 rounded-full px-5 text-sm font-medium backdrop-blur-md border transition-colors cursor-pointer whitespace-nowrap',
                             featuredVideo.isBookmarked
                               ? 'bg-rose-600/90 text-white border-rose-400/50 hover:bg-rose-600'
                               : 'bg-white/15 text-white border-white/20 hover:bg-white/25'
@@ -489,72 +610,58 @@ export function HomeFeed({
                             aria-hidden="true"
                           />
                           <span>{featuredVideo.isBookmarked ? 'Saved' : 'Save'}</span>
-                        </button>
+                        </motion.button>
 
-                        <button
+                        <motion.button
                           type="button"
                           onClick={() =>
                             setShareTarget({
                               videoId: featuredVideo.id,
                               title: featuredVideo.title,
                               thumbnailUrl: featuredVideo.thumbnailUrl,
-                              sourceUrl: featuredVideo.videoUrl,
                             })
                           }
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.9 }}
                           aria-label={`Share ${featuredVideo.title}`}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/20 hover:bg-white/25 transition-all cursor-pointer"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/20 hover:bg-white/25 transition-colors cursor-pointer"
                         >
                           <Share2 className="h-4 w-4" aria-hidden="true" />
-                        </button>
+                        </motion.button>
                       </div>
                     </div>
 
                     {/* Right-Side Vertical Up/Down Carousel Switcher (Signature of Reference 2) */}
                     {heroVideos.length > 1 && (
                       <div className="hidden sm:flex flex-col items-center gap-2 shrink-0">
-                        <button
+                        <motion.button
                           type="button"
                           data-testid="hero-prev-slide"
                           onClick={() => handleHeroStep(-1)}
+                          whileHover={{ scale: 1.08, y: -1 }}
+                          whileTap={{ scale: 0.9 }}
                           aria-label="Previous featured seminar"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md border border-white/20 hover:bg-black/75 transition-all cursor-pointer"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md border border-white/20 hover:bg-black/75 transition-colors cursor-pointer"
                         >
                           <ChevronUp className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
                           type="button"
                           data-testid="hero-next-slide"
                           onClick={() => handleHeroStep(1)}
+                          whileHover={{ scale: 1.08, y: 1 }}
+                          whileTap={{ scale: 0.9 }}
                           aria-label="Next featured seminar"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-950 shadow-lg hover:bg-zinc-100 transition-all cursor-pointer"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-950 shadow-lg hover:bg-zinc-100 transition-colors cursor-pointer"
                         >
                           <ChevronDown className="h-5 w-5" aria-hidden="true" />
-                        </button>
+                        </motion.button>
                         <span className="mt-0.5 font-mono text-[0.6875rem] font-medium text-white/80 tabular-nums">
                           {safeHeroIndex + 1}/{heroVideos.length}
                         </span>
                       </div>
                     )}
                   </div>
-
-                  {/* Watch Progress Bar on Hero Bottom Edge */}
-                  {featuredProgress?.hasProgress && (
-                    <div
-                      role="progressbar"
-                      aria-label={`Watch progress for ${featuredVideo.title}: ${featuredProgress.statusLabel}`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={featuredProgress.percent}
-                      data-testid="featured-watch-progress-bar"
-                      data-progress-pct={featuredProgress.percent}
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-1.5 bg-white/20"
-                    >
-                      <div
-                        className="h-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.85)] transition-[width] duration-300"
-                        style={{ width: `${featuredProgress.percent}%` }}
-                      />
-                    </div>
-                  )}
                 </div>
               </section>
             )}
@@ -574,68 +681,55 @@ export function HomeFeed({
                   </TransitionLink>
                 </div>
                 <div className="flex gap-3.5 overflow-x-auto no-scrollbar pb-1">
-                  {continueWatchingItems.items.map(({ video, progressSeconds }) => {
-                    const prog = computeWatchProgress(progressSeconds, video.durationSeconds);
-                    return (
-                      <TransitionLink
-                        key={video.id}
-                        href={`/watch/${video.id}`}
-                        videoId={video.id}
-                        data-vt-video-id={video.id}
-                        data-vt-source="continue"
-                        className="group flex w-[min(72vw,15.625rem)] shrink-0 items-center gap-3 rounded-2xl bg-white dark:bg-[#121218] p-2.5 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs hover:border-rose-300 dark:hover:border-rose-500/40 transition-colors"
+                  {continueWatchingItems.items.map(({ video }) => (
+                    <TransitionLink
+                      key={video.id}
+                      href={`/watch/${video.id}`}
+                      videoId={video.id}
+                      data-vt-video-id={video.id}
+                      data-vt-source="continue"
+                      className="group flex w-[min(72vw,15.625rem)] shrink-0 items-center gap-3 rounded-2xl bg-white dark:bg-[#121218] p-2.5 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs hover:border-rose-300 dark:hover:border-rose-500/40 transition-colors"
+                    >
+                      <div
+                        data-vt-role="poster"
+                        className="relative h-[3.875rem] w-[6rem] shrink-0 overflow-hidden rounded-xl bg-zinc-900"
                       >
-                        <div
-                          data-vt-role="poster"
-                          className="relative h-[3.875rem] w-[6rem] shrink-0 overflow-hidden rounded-xl bg-zinc-900"
+                        <img
+                          src={video.thumbnailUrl}
+                          alt={video.title}
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover"
+                        />
+                        <ContentRatingBadge
+                          rating={video.contentRating}
+                          variant="micro"
+                          className="absolute top-1 left-1 z-10"
+                        />
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-zinc-950 shadow-sm">
+                            <Play className="h-3 w-3 fill-current ml-0.5" />
+                          </span>
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          data-vt-role="title"
+                          className="text-xs font-semibold text-zinc-950 dark:text-white line-clamp-2 leading-snug group-hover:text-rose-600 dark:group-hover:text-rose-400"
                         >
-                          <img
-                            src={video.thumbnailUrl}
-                            alt={video.title}
-                            referrerPolicy="no-referrer"
-                            className="h-full w-full object-cover"
-                          />
-                          <ContentRatingBadge
-                            rating={video.contentRating}
-                            variant="micro"
-                            className="absolute top-1 left-1 z-10"
-                          />
-                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-zinc-950 shadow-sm">
-                              <Play className="h-3 w-3 fill-current ml-0.5" />
-                            </span>
-                          </div>
-                          {prog.hasProgress && (
-                            <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25">
-                              <div
-                                className="h-full bg-rose-500"
-                                style={{ width: `${prog.percent}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p
-                            data-vt-role="title"
-                            className="text-xs font-semibold text-zinc-950 dark:text-white line-clamp-2 leading-snug group-hover:text-rose-600 dark:group-hover:text-rose-400"
-                          >
-                            {video.title}
-                          </p>
-                          <p className="mt-1 font-mono text-[0.6875rem] text-zinc-500 tabular-nums">
-                            {prog.isCompleted
-                              ? 'Watched'
-                              : `${formatDuration(prog.remainingSeconds)} left`}
-                          </p>
-                        </div>
-                      </TransitionLink>
-                    );
-                  })}
+                          {video.title}
+                        </p>
+                        <p className="mt-1 font-mono text-[0.6875rem] text-zinc-500 tabular-nums">
+                          {formatDuration(video.durationSeconds)}
+                        </p>
+                      </div>
+                    </TransitionLink>
+                  ))}
                 </div>
               </section>
             )}
 
             {/* SECTION 1: TRENDING NOW (Reference 1 & 2 Cinema Poster Row) */}
-            {showCuratedHome && trendingRow.length > 0 && (
+            {(isGridLoading ? skeletonCounts.trendingCount > 0 : showCuratedHome && trendingRow.length > 0) && (
               <section aria-label="Trending now" className="mb-9">
                 <div className="mb-4 flex items-center justify-between gap-4">
                   <h2 className="inline-flex items-center gap-2 font-display text-lg sm:text-xl font-bold tracking-tight text-zinc-950 dark:text-white">
@@ -647,7 +741,7 @@ export function HomeFeed({
                   </h2>
                   <button
                     type="button"
-                    onClick={() => setSortBy('most-viewed')}
+                    onClick={() => handleSelectSort('most-viewed')}
                     className="inline-flex items-center gap-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
                   >
                     <span>See all</span>
@@ -655,33 +749,41 @@ export function HomeFeed({
                   </button>
                 </div>
 
-                <div
-                  data-testid="trending-grid"
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-                >
-                  {trendingRow.map((video, idx) => (
-                    <VideoCard
-                      key={video.id}
-                      video={video}
-                      index={idx}
-                      variant="cinema"
-                      progressSeconds={resolveVideoProgressSeconds(
-                        video.id,
-                        video.watchProgressSeconds,
-                        localProgressMap
-                      )}
-                      onToggleBookmark={handleToggleBookmark}
-                      onShare={(v) =>
-                        setShareTarget({
-                          videoId: v.id,
-                          title: v.title,
-                          thumbnailUrl: v.thumbnailUrl,
-                          sourceUrl: v.videoUrl,
-                        })
-                      }
-                    />
-                  ))}
-                </div>
+                {isGridLoading ? (
+                  <VideoGridSkeleton
+                    count={skeletonCounts.trendingCount}
+                    testId="trending-grid-skeleton"
+                    label="Loading trending videos"
+                  />
+                ) : (
+                  <div
+                    data-testid="trending-grid"
+                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+                  >
+                    {trendingRow.map((video, idx) => (
+                      <VideoCard
+                        key={video.id}
+                        video={video}
+                        index={idx}
+                        variant="cinema"
+                        progressSeconds={resolveVideoProgressSeconds(
+                          video.id,
+                          video.watchProgressSeconds,
+                          localProgressMap
+                        )}
+                        onToggleBookmark={handleToggleBookmark}
+                        onShare={(v) =>
+                          setShareTarget({
+                            videoId: v.id,
+                            title: v.title,
+                            thumbnailUrl: v.thumbnailUrl,
+                            sourceUrl: v.videoUrl,
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 
@@ -696,11 +798,19 @@ export function HomeFeed({
                     : categories.find((c) => c.slug === activeCategory)?.name ?? 'Videos'}
                 </h2>
                 <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
-                  {filteredVideos.length} {filteredVideos.length === 1 ? 'video' : 'videos'}
+                  {isGridLoading
+                    ? 'Updating feed...'
+                    : `${filteredVideos.length} ${filteredVideos.length === 1 ? 'video' : 'videos'}`}
                 </span>
               </div>
 
-              {filteredVideos.length === 0 ? (
+              {isGridLoading ? (
+                <VideoGridSkeleton
+                  count={skeletonCounts.discoveryCount}
+                  testId="video-grid-skeleton"
+                  label="Loading recommended videos"
+                />
+              ) : filteredVideos.length === 0 ? (
                 videos.length === 0 ? (
                   <div
                     data-testid="empty-catalog-state"
@@ -712,10 +822,15 @@ export function HomeFeed({
                       className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_22%,rgba(245,158,11,0.20),rgba(225,29,72,0.09)_50%,transparent_78%)]"
                     />
 
+                    {/* Floating 18+ Neon Corner Watermark Stickers */}
+                    <div className="pointer-events-none absolute top-4 right-4 hidden sm:block z-10">
+                      <AdultNeonWatermarkSeal />
+                    </div>
+
                     <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center">
                       <ParticleOrbCrest
                         variant="hero"
-                        className="border-amber-400/55 shadow-[0_0_46px_rgba(245,158,11,0.34),inset_0_0_24px_rgba(251,191,36,0.22)]"
+                        className="border-amber-400/55 shadow-[0_0_2.875rem_rgba(245,158,11,0.34),inset_0_0_1.5rem_rgba(251,191,36,0.22)]"
                       />
 
                       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-300/90">
@@ -740,6 +855,9 @@ export function HomeFeed({
                       <p className="mt-3 max-w-xl text-sm sm:text-base leading-relaxed text-zinc-300">
                         Your exclusive adults-only streaming vault is live. Publish your first verified 18+ release in Creator Studio to showcase HD streams, creator spotlights, and curated collections.
                       </p>
+
+                      {/* Interactive 18+ Neon Sticker & Symbol Strip */}
+                      <AdultStickerCluster variant="hero" className="mt-5" />
 
                       <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
                         <Button asChild variant="primary" size="md">
@@ -851,68 +969,53 @@ export function HomeFeed({
                   </div>
 
                   <div className="space-y-3.5">
-                    {continueWatchingItems.items.map(({ video, progressSeconds }) => {
-                      const prog = computeWatchProgress(progressSeconds, video.durationSeconds);
-                      return (
-                        <TransitionLink
-                          key={video.id}
-                          href={`/watch/${video.id}`}
-                          videoId={video.id}
-                          data-vt-video-id={video.id}
-                          data-vt-source="continue"
-                          className="group flex items-center gap-3.5 rounded-2xl p-1 -m-1 hover:bg-[#F4F5F8] dark:hover:bg-[#1A1A22] transition-colors"
+                    {continueWatchingItems.items.map(({ video }) => (
+                      <TransitionLink
+                        key={video.id}
+                        href={`/watch/${video.id}`}
+                        videoId={video.id}
+                        data-vt-video-id={video.id}
+                        data-vt-source="continue"
+                        className="group flex items-center gap-3.5 rounded-2xl p-1 -m-1 hover:bg-[#F4F5F8] dark:hover:bg-[#1A1A22] transition-colors"
+                      >
+                        <div
+                          data-vt-role="poster"
+                          className="relative h-[4.625rem] w-[7.125rem] shrink-0 overflow-hidden rounded-2xl bg-zinc-900 ring-1 ring-black/8 dark:ring-white/10"
                         >
-                          <div
-                            data-vt-role="poster"
-                            className="relative h-[4.625rem] w-[7.125rem] shrink-0 overflow-hidden rounded-2xl bg-zinc-900 ring-1 ring-black/8 dark:ring-white/10"
-                          >
-                            <img
-                              src={video.thumbnailUrl}
-                              alt={video.title}
-                              referrerPolicy="no-referrer"
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            />
-                            <ContentRatingBadge
-                              rating={video.contentRating}
-                              variant="micro"
-                              className="absolute top-1.5 left-1.5 z-10"
-                            />
-                            <div className="absolute inset-0 bg-black/28 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/88 text-zinc-950 shadow-md backdrop-blur-xs transition-transform duration-200 group-hover:scale-110">
-                                <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
-                              </span>
-                            </div>
-                            {prog.hasProgress && (
-                              <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25">
-                                <div
-                                  className="h-full bg-rose-500"
-                                  style={{ width: `${prog.percent}%` }}
-                                />
-                              </div>
-                            )}
+                          <img
+                            src={video.thumbnailUrl}
+                            alt={video.title}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          <ContentRatingBadge
+                            rating={video.contentRating}
+                            variant="micro"
+                            className="absolute top-1.5 left-1.5 z-10"
+                          />
+                          <div className="absolute inset-0 bg-black/28 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/88 text-zinc-950 shadow-md backdrop-blur-xs transition-transform duration-200 group-hover:scale-110">
+                              <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+                            </span>
                           </div>
+                        </div>
 
-                          <div className="min-w-0 flex-1">
-                            <p
-                              data-vt-role="title"
-                              className="font-display text-[0.8438rem] font-bold leading-snug text-zinc-950 dark:text-white line-clamp-2 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors"
-                            >
-                              {video.title}
-                            </p>
-                            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                              {video.category.name}
-                            </p>
-                            <p className="mt-1 font-mono text-[0.6875rem] text-zinc-400 dark:text-zinc-500 tabular-nums">
-                              {prog.hasProgress
-                                ? prog.isCompleted
-                                  ? 'Watched'
-                                  : `${prog.percent}% · ${formatDuration(prog.remainingSeconds)} left`
-                                : formatDuration(video.durationSeconds)}
-                            </p>
-                          </div>
-                        </TransitionLink>
-                      );
-                    })}
+                        <div className="min-w-0 flex-1">
+                          <p
+                            data-vt-role="title"
+                            className="font-display text-[0.8438rem] font-bold leading-snug text-zinc-950 dark:text-white line-clamp-2 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors"
+                          >
+                            {video.title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                            {video.category.name}
+                          </p>
+                          <p className="mt-1 font-mono text-[0.6875rem] text-zinc-400 dark:text-zinc-500 tabular-nums">
+                            {formatDuration(video.durationSeconds)}
+                          </p>
+                        </div>
+                      </TransitionLink>
+                    ))}
                   </div>
                 </div>
               )}

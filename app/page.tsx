@@ -8,6 +8,7 @@ import {
 import {
   buildCanonicalUrl,
   buildItemListJsonLd,
+  serializeJsonLd,
   SITE_DESCRIPTION,
   SITE_KEYWORDS,
   SITE_NAME,
@@ -94,7 +95,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         )
       : undefined;
 
-  const itemListJsonLd = JSON.stringify(
+  const itemListJsonLd = serializeJsonLd(
     buildItemListJsonLd({
       name: activeCategory
         ? `${activeCategory.name} — ${SITE_NAME}`

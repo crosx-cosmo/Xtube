@@ -2,9 +2,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --font-outfit: 'Outfit';
-  --font-jakarta: 'Plus Jakarta Sans';
-  --font-ibm-mono: 'IBM Plex Mono';
+  --font-geist-sans: 'Geist', 'Geist Sans', system-ui, -apple-system, sans-serif;
+  --font-geist-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
   --surface-canvas: #f4f5f8;
   --surface-panel: #ffffff;
   --surface-elevated: #eff1f5;
@@ -13,9 +12,30 @@
   --accent-crimson: #e11d48;
   --accent-crimson-hover: #be123c;
   --hairline: #e6e8ef;
+  --background: #f4f5f8;
+  --foreground: #111318;
+  --card: #ffffff;
+  --card-foreground: #111318;
+  --popover: #ffffff;
+  --popover-foreground: #111318;
+  --primary: #e11d48;
+  --primary-foreground: #ffffff;
+  --secondary: #eff1f5;
+  --secondary-foreground: #111318;
+  --muted: #eff1f5;
+  --muted-foreground: #5c6270;
+  --accent: #eff1f5;
+  --accent-foreground: #111318;
+  --destructive: #dc2626;
+  --border: #e6e8ef;
+  --input: #e6e8ef;
+  --ring: #e11d48;
+  --radius: 0.875rem;
   --text-hero-public: clamp(1.375rem, 1.05rem + 1.45vw, 2.25rem);
   --text-hero-studio: clamp(1.75rem, 1.35rem + 1.4vw, 2.375rem);
+  --text-section-title: clamp(1.125rem, 0.95rem + 0.65vw, 1.5rem);
   --space-section: clamp(1.25rem, 1rem + 1vw, 2rem);
+  --space-container-x: clamp(1rem, 0.75rem + 1.25vw, 2rem);
 }
 
 .dark {
@@ -27,12 +47,30 @@
   --accent-crimson: #e11d48;
   --accent-crimson-hover: #f43f5e;
   --hairline: #23232d;
+  --background: #0b0b0f;
+  --foreground: #f4f4f6;
+  --card: #121218;
+  --card-foreground: #f4f4f6;
+  --popover: #121218;
+  --popover-foreground: #f4f4f6;
+  --primary: #e11d48;
+  --primary-foreground: #ffffff;
+  --secondary: #1a1a22;
+  --secondary-foreground: #f4f4f6;
+  --muted: #1a1a22;
+  --muted-foreground: #9ca3af;
+  --accent: #1a1a22;
+  --accent-foreground: #f4f4f6;
+  --destructive: #ef4444;
+  --border: #23232d;
+  --input: #23232d;
+  --ring: #f43f5e;
 }
 
 @theme inline {
-  --font-display: var(--font-outfit), system-ui, -apple-system, sans-serif;
-  --font-sans: var(--font-jakarta), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-ibm-mono), ui-monospace, monospace;
+  --font-display: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 @layer base {
@@ -65,11 +103,18 @@
   }
 }
 
-/* Smooth circular View Transition wipe for Light/Dark mode toggling */
+/* 3D Prismatic Diamond-Iris & Velvet Eclipse View Transition Stage */
+html[data-vt='theme']::view-transition-group(root) {
+  perspective: 1400px;
+  overflow: clip;
+}
+
 html[data-vt='theme']::view-transition-old(root),
 html[data-vt='theme']::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
+  transform-origin: center center;
+  will-change: clip-path, transform, filter, opacity;
 }
 
 html[data-vt='theme']::view-transition-old(root) {
@@ -78,6 +123,7 @@ html[data-vt='theme']::view-transition-old(root) {
 
 html[data-vt='theme']::view-transition-new(root) {
   z-index: 9999;
+  filter: drop-shadow(0 0 28px rgba(225, 29, 72, 0.38));
 }
 
 /* Native-app View Transition API choreography between browsing & watching */
@@ -224,14 +270,28 @@ html[data-vt='theater']::view-transition-new(root) {
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Fallback surface crossfade when View Transitions API is unavailable */
-html.theme-transitioning,
-html.theme-transitioning *,
-html.theme-transitioning *::before,
-html.theme-transitioning *::after {
-  transition-property: background-color, border-color, color, fill, stroke !important;
-  transition-duration: 320ms !important;
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1) !important;
+/* Freeze per-node CSS transitions during instant theme commit to prevent layout/style thrashing */
+html[data-theme-switching='true'],
+html[data-theme-switching='true'] *,
+html[data-theme-switching='true'] *::before,
+html[data-theme-switching='true'] *::after {
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* GPU-Composited Velvet Shimmer Wave for Video Grid Skeletons */
+@keyframes velvet-skeleton-shimmer {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+.velvet-skeleton-shimmer {
+  will-change: transform;
+  animation: velvet-skeleton-shimmer 1.55s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -240,9 +300,8 @@ html.theme-transitioning *::after {
   ::view-transition-new(*) {
     animation: none !important;
   }
-  html.theme-transitioning,
-  html.theme-transitioning * {
-    transition-duration: 0ms !important;
+  .velvet-skeleton-shimmer {
+    animation: none !important;
   }
 }
 

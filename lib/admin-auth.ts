@@ -12,6 +12,7 @@ import {
   generateSessionToken,
   generateUsernameSlug,
   getNeonAuthBaseUrl,
+  hashPassword,
   hashSessionToken,
   isNeonAuthServiceConfigured,
   normalizeEmail,
@@ -54,33 +55,47 @@ function mapAdminUserRow(row: RawAdminUserRow): AuthUser {
   };
 }
 
-function getConfiguredPasscode(): string {
-  const configured = process.env.ADMIN_PASSCODE?.trim();
-  return configured && configured.length > 0 ? configured : 'kinship-admin-2026';
-}
-
-function createSessionToken(passcode: string): string {
-  return crypto
-    .createHmac('sha256', passcode)
-    .update('kinship-admin-v1-session')
-    .digest('hex');
-}
-
-export function getExpectedAdminToken(): string {
-  return createSessionToken(getConfiguredPasscode());
-}
-
-export function isValidAdminToken(
-  candidate: string | null | undefined,
-  expected: string = getExpectedAdminToken()
-): boolean {
-  if (!candidate) return false;
-  const trimmed = candidate.trim();
-  if (!trimmed) return false;
-  const a = Buffer.from(trimmed, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
+function timingSafeEqualStrings(aStr: string, bStr: string): boolean {
+  const a = Buffer.from(aStr, 'utf8');
+  const b = Buffer.from(bStr, 'utf8');
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Validates primary administrator credentials strictly against server-side
+ * environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD` / `ADMIN_PASSCODE`).
+ * Never falls back to hardcoded emails, passwords, or default passcodes.
+ */
+export function isConfiguredPrimaryAdminCredential(
+  emailInput: string,
+  passwordInput: string,
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const email = normalizeEmail(emailInput);
+  const password = passwordInput;
+  if (!email || !password) return false;
+
+  const configuredEmail = normalizeEmail(env.ADMIN_EMAIL ?? '');
+  if (!configuredEmail) return false;
+
+  const configuredPassword = env.ADMIN_PASSWORD?.trim() ?? '';
+  const configuredPasscode = env.ADMIN_PASSCODE?.trim() ?? '';
+  if (!configuredPassword && !configuredPasscode) return false;
+
+  if (!timingSafeEqualStrings(email, configuredEmail)) {
+    return false;
+  }
+
+  if (configuredPassword && timingSafeEqualStrings(password, configuredPassword)) {
+    return true;
+  }
+
+  if (configuredPasscode && timingSafeEqualStrings(password, configuredPasscode)) {
+    return true;
+  }
+
+  return false;
 }
 
 export function getActiveAdminAuthProvider(): AuthProviderKind {
@@ -101,6 +116,7 @@ async function createAdminSession(userId: string): Promise<string> {
       INSERT INTO auth_sessions (id, user_id, token_hash, expires_at)
       VALUES (${sessionId}, ${userId}, ${tokenHash}, ${expiresAtDate.toISOString()})
     `;
+    void sql`DELETE FROM auth_sessions WHERE expires_at <= NOW()`.catch(() => undefined);
     return rawToken;
   });
 }
@@ -110,10 +126,12 @@ async function upsertSyncedNeonAdminUser(params: {
   name: string;
   email: string;
   avatarUrl?: string | null;
+  passwordHash?: string | null;
 }): Promise<AuthUser> {
   return withNeonSchemaRecovery(async () => {
     const email = normalizeEmail(params.email);
     const displayName = params.name.trim() || email.split('@')[0] || 'Admin';
+    const passwordHash = params.passwordHash ?? null;
 
     const sql = getNeonSql();
     const existing = (await sql`
@@ -130,6 +148,7 @@ async function upsertSyncedNeonAdminUser(params: {
         UPDATE users
         SET neon_auth_id = COALESCE(neon_auth_id, ${params.neonAuthId ?? null}),
             is_admin = TRUE,
+            password_hash = COALESCE(${passwordHash}, password_hash),
             name = CASE WHEN char_length(trim(name)) = 0 THEN ${displayName} ELSE name END
         WHERE id = ${row.id}
       `;
@@ -150,8 +169,8 @@ async function upsertSyncedNeonAdminUser(params: {
     const now = new Date().toISOString();
 
     await sql`
-      INSERT INTO users (id, name, username, email, avatar_url, bio, credentials, is_educator, is_admin, followers_count, neon_auth_id, created_at)
-      VALUES (${userId}, ${displayName}, ${username}, ${email}, ${params.avatarUrl ?? null}, '', '', FALSE, TRUE, 0, ${params.neonAuthId ?? null}, ${now})
+      INSERT INTO users (id, name, username, email, avatar_url, bio, credentials, is_educator, is_admin, followers_count, password_hash, neon_auth_id, created_at)
+      VALUES (${userId}, ${displayName}, ${username}, ${email}, ${params.avatarUrl ?? null}, '', '', FALSE, TRUE, 0, ${passwordHash}, ${params.neonAuthId ?? null}, ${now})
     `;
 
     return {
@@ -280,6 +299,13 @@ async function callManagedNeonAuthSignIn(
   requestOrigin?: string
 ) {
   return postToNeonBetterAuthWithOriginRetry('/sign-in/email', payload, requestOrigin);
+}
+
+async function callManagedNeonAuthSignUp(
+  payload: { name: string; email: string; password: string },
+  requestOrigin?: string
+) {
+  return postToNeonBetterAuthWithOriginRetry('/sign-up/email', payload, requestOrigin);
 }
 
 export async function requestAdminPasswordReset(
@@ -443,6 +469,16 @@ export async function confirmAdminPasswordReset(
       };
     }
 
+    if (isNeonConfigured()) {
+      await upsertSyncedNeonAdminUser({
+        name: email.split('@')[0] || 'Admin',
+        email,
+        passwordHash: hashPassword(newPassword),
+      }).catch((err) => {
+        console.warn('[AdminAuth] Could not sync reset password hash to PostgreSQL:', err);
+      });
+    }
+
     return {
       ok: true,
       message: 'Your admin password has been updated. Sign in with your new password.',
@@ -488,41 +524,9 @@ export async function signInAdminWithEmailPassword(
 
   const email = validation.normalized.email;
   const password = validation.normalized.password;
+  const activeProvider = getActiveAdminAuthProvider();
 
-  // Path 1: Managed Neon Auth (Better Auth) when NEON_AUTH_BASE_URL is configured
-  if (isNeonAuthServiceConfigured()) {
-    try {
-      const neonRes = await callManagedNeonAuthSignIn({ email, password }, requestOrigin);
-      if (!neonRes.ok) {
-        return {
-          error: neonRes.error || 'Invalid admin email or password.',
-          status:
-            neonRes.status === 401 || neonRes.status === 400
-              ? 401
-              : neonRes.status,
-        };
-      }
-
-      const syncedAdmin = await upsertSyncedNeonAdminUser({
-        neonAuthId: neonRes.user?.id ?? null,
-        name: neonRes.user?.name || email.split('@')[0] || 'Admin',
-        email: neonRes.user?.email || email,
-        avatarUrl: neonRes.user?.image ?? null,
-      });
-
-      const token = await createAdminSession(syncedAdmin.id);
-      return { admin: syncedAdmin, token, provider: 'neon-auth' };
-    } catch (error) {
-      console.error('[AdminAuth] Managed Neon Auth sign-in error:', error);
-      return {
-        error:
-          'Could not reach Neon Auth or PostgreSQL. Verify DATABASE_URL and NEON_AUTH_BASE_URL.',
-        status: 502,
-      };
-    }
-  }
-
-  // Path 2: Direct Neon PostgreSQL authentication
+  // Check 1: Direct Neon PostgreSQL users table verification
   const rows = await withNeonSchemaRecovery(async () => {
     const sql = getNeonSql();
     return (await sql`
@@ -534,23 +538,82 @@ export async function signInAdminWithEmailPassword(
   });
 
   const row = rows[0];
-  if (!row || !verifyPassword(password, row.password_hash)) {
-    return {
-      error: 'Invalid admin email or password.',
-      status: 401,
-    };
+  if (row && verifyPassword(password, row.password_hash)) {
+    if (!row.is_admin) {
+      return {
+        error: 'This account does not have administrator access.',
+        status: 403,
+      };
+    }
+    const admin = mapAdminUserRow(row);
+    const token = await createAdminSession(admin.id);
+    return { admin, token, provider: activeProvider };
   }
 
-  if (!row.is_admin) {
-    return {
-      error: 'This account does not have administrator access.',
-      status: 403,
-    };
+  // Check 2: Primary studio owner / configured admin credentials
+  if (isConfiguredPrimaryAdminCredential(email, password)) {
+    const syncedAdmin = await upsertSyncedNeonAdminUser({
+      name: row?.name || email.split('@')[0] || 'Admin',
+      email,
+      avatarUrl: row?.avatar_url ?? null,
+      passwordHash: hashPassword(password),
+    });
+
+    if (isNeonAuthServiceConfigured()) {
+      void callManagedNeonAuthSignUp(
+        {
+          name: syncedAdmin.name,
+          email: syncedAdmin.email,
+          password,
+        },
+        requestOrigin
+      ).catch(() => undefined);
+    }
+
+    const token = await createAdminSession(syncedAdmin.id);
+    return { admin: syncedAdmin, token, provider: activeProvider };
   }
 
-  const admin = mapAdminUserRow(row);
-  const token = await createAdminSession(admin.id);
-  return { admin, token, provider: 'neon-postgres' };
+  // Check 3: Managed Neon Auth (Better Auth) when NEON_AUTH_BASE_URL is configured
+  if (isNeonAuthServiceConfigured()) {
+    try {
+      let neonRes = await callManagedNeonAuthSignIn({ email, password }, requestOrigin);
+
+      if (!neonRes.ok && row?.is_admin && !row.password_hash) {
+        const signUpRes = await callManagedNeonAuthSignUp(
+          {
+            name: row.name || email.split('@')[0] || 'Admin',
+            email,
+            password,
+          },
+          requestOrigin
+        );
+        if (signUpRes.ok) {
+          neonRes = signUpRes;
+        }
+      }
+
+      if (neonRes.ok) {
+        const syncedAdmin = await upsertSyncedNeonAdminUser({
+          neonAuthId: neonRes.user?.id ?? null,
+          name: neonRes.user?.name || row?.name || email.split('@')[0] || 'Admin',
+          email: neonRes.user?.email || email,
+          avatarUrl: neonRes.user?.image ?? row?.avatar_url ?? null,
+          passwordHash: hashPassword(password),
+        });
+
+        const token = await createAdminSession(syncedAdmin.id);
+        return { admin: syncedAdmin, token, provider: 'neon-auth' };
+      }
+    } catch (error) {
+      console.error('[AdminAuth] Managed Neon Auth sign-in error:', error);
+    }
+  }
+
+  return {
+    error: 'Invalid admin email or password.',
+    status: 401,
+  };
 }
 
 async function readIncomingAdminToken(): Promise<string | null> {

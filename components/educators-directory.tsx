@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { BadgeCheck, UserCheck, UserPlus } from 'lucide-react';
 import type { User } from '@/lib/types';
+import { requestApiJson } from '@/lib/api-client';
 import { formatViews } from '@/lib/video-utils';
 import { EducatorAvatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -37,28 +38,25 @@ export function EducatorsDirectory({ initialEducators }: EducatorsDirectoryProps
       )
     );
 
-    try {
-      const res = await fetch(`/api/creators/${educator.username}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creatorId: educator.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setEducators((prev) =>
-          prev.map((item) =>
-            item.id === educator.id
-              ? {
-                  ...item,
-                  isFollowing: Boolean(data.isFollowing),
-                  followersCount: data.followersCount,
-                }
-              : item
-          )
-        );
-      }
-    } catch {
-      // Keep optimistic state
+    const { ok, data } = await requestApiJson<{
+      isFollowing: boolean;
+      followersCount: number;
+    }>(`/api/creators/${educator.username}`, {
+      method: 'POST',
+      json: { creatorId: educator.id },
+    });
+    if (ok && data) {
+      setEducators((prev) =>
+        prev.map((item) =>
+          item.id === educator.id
+            ? {
+                ...item,
+                isFollowing: Boolean(data.isFollowing),
+                followersCount: data.followersCount,
+              }
+            : item
+        )
+      );
     }
   };
 

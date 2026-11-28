@@ -1,12 +1,12 @@
 'use client';
 
 import * as React from 'react';
+import { motion } from 'motion/react';
 import {
   ArrowLeft,
   BadgeCheck,
   Bookmark,
   ChevronRight,
-  ExternalLink,
   ListVideo,
   Share2,
   ThumbsUp,
@@ -16,22 +16,24 @@ import {
 import type { VideoDetail } from '@/lib/types';
 import {
   computeWatchProgress,
-  extractSourceHost,
   formatDuration,
   formatEditorialDate,
   formatViews,
   getActiveChapterIndex,
 } from '@/lib/video-utils';
+import { requestApiJson } from '@/lib/api-client';
 import {
   resolveVideoProgressSeconds,
   setLocalWatchProgress,
   useWatchProgressMap,
 } from '@/lib/watch-progress-store';
+import { AdultStickerStamp } from '@/components/adult-stickers';
 import { VideoPlayer } from '@/components/video-player';
 import { ContentRatingBadge } from '@/components/content-rating-badge';
 import { ReflectionCard } from '@/components/reflection-card';
 import { DiscussionSection } from '@/components/discussion-section';
 import { ShareModal } from '@/components/share-modal';
+import { VideoReactionBar } from '@/components/video-reaction-bar';
 import { EducatorAvatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { TransitionLink } from '@/components/transition-link';
@@ -70,19 +72,17 @@ export function WatchView({ video }: WatchViewProps) {
   const [shareOpen, setShareOpen] = React.useState(false);
   const [discussionDraftSeed, setDiscussionDraftSeed] = React.useState<string>('');
 
-  const sourceHost = extractSourceHost(video.videoUrl);
   const activeChapterIdx = getActiveChapterIndex(video.chapters, currentTime);
 
   const persistProgress = React.useCallback(
     (seconds: number) => {
       const clamped = Math.max(0, Math.min(video.durationSeconds, Math.floor(seconds)));
       setLocalWatchProgress(video.id, clamped);
-      fetch('/api/bookmarks', {
+      void requestApiJson('/api/bookmarks', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: video.id, progressSeconds: clamped }),
+        json: { videoId: video.id, progressSeconds: clamped },
         keepalive: true,
-      }).catch(() => {});
+      });
     },
     [video.id, video.durationSeconds]
   );
@@ -106,26 +106,24 @@ export function WatchView({ video }: WatchViewProps) {
       Math.floor(video.durationSeconds * 0.15)
     );
     setLocalWatchProgress(video.id, minPlayProgress);
-    fetch(`/api/videos/${video.id}/play`, {
+    void requestApiJson(`/api/videos/${video.id}/play`, {
       method: 'POST',
       keepalive: true,
-    }).catch(() => {});
+    });
   };
 
   const handleToggleLike = async () => {
     const nextLiked = !hasLiked;
     setHasLiked(nextLiked);
     setLikesCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
-    try {
-      const res = await fetch(`/api/videos/${video.id}/like`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setHasLiked(Boolean(data.hasLiked));
-        setLikesCount(Number(data.likes));
-      }
-    } catch {
+    const { ok, data } = await requestApiJson<{ hasLiked: boolean; likes: number }>(
+      `/api/videos/${video.id}/like`,
+      { method: 'POST' }
+    );
+    if (ok && data) {
+      setHasLiked(Boolean(data.hasLiked));
+      setLikesCount(Number(data.likes));
+    } else {
       setHasLiked(!nextLiked);
       setLikesCount((c) => Math.max(0, c + (nextLiked ? -1 : 1)));
     }
@@ -134,17 +132,13 @@ export function WatchView({ video }: WatchViewProps) {
   const handleToggleBookmark = async () => {
     const next = !isBookmarked;
     setIsBookmarked(next);
-    try {
-      const res = await fetch('/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: video.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsBookmarked(Boolean(data.isBookmarked));
-      }
-    } catch {
+    const { ok, data } = await requestApiJson<{ isBookmarked: boolean }>(
+      '/api/bookmarks',
+      { method: 'POST', json: { videoId: video.id } }
+    );
+    if (ok && data) {
+      setIsBookmarked(Boolean(data.isBookmarked));
+    } else {
       setIsBookmarked(!next);
     }
   };
@@ -153,18 +147,17 @@ export function WatchView({ video }: WatchViewProps) {
     const next = !isFollowing;
     setIsFollowing(next);
     setFollowersCount((c) => Math.max(0, c + (next ? 1 : -1)));
-    try {
-      const res = await fetch(`/api/creators/${video.creator.username}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creatorId: video.creator.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsFollowing(Boolean(data.isFollowing));
-        setFollowersCount(data.followersCount);
-      }
-    } catch {
+    const { ok, data } = await requestApiJson<{
+      isFollowing: boolean;
+      followersCount: number;
+    }>(`/api/creators/${video.creator.username}`, {
+      method: 'POST',
+      json: { creatorId: video.creator.id },
+    });
+    if (ok && data) {
+      setIsFollowing(Boolean(data.isFollowing));
+      setFollowersCount(data.followersCount);
+    } else {
       setIsFollowing(!next);
     }
   };
@@ -194,15 +187,18 @@ export function WatchView({ video }: WatchViewProps) {
         className="mb-3.5 flex items-center justify-between gap-3"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <button
+          <motion.button
             type="button"
             data-testid="watch-back-btn"
             onClick={() => navigateBackToBrowse('/')}
+            whileHover={{ x: -3, scale: 1.03 }}
+            whileTap={{ scale: 0.93 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 22 }}
             className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white dark:bg-[#181820] border border-zinc-200/90 dark:border-zinc-800 px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:border-rose-300 dark:hover:border-rose-500/40 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Back to Browse</span>
-          </button>
+          </motion.button>
 
           <ChevronRight
             className="hidden sm:block h-3.5 w-3.5 text-zinc-400 dark:text-zinc-600 shrink-0"
@@ -217,17 +213,26 @@ export function WatchView({ video }: WatchViewProps) {
           </TransitionLink>
         </div>
 
-        <ContentRatingBadge
-          rating={video.contentRating}
-          variant="player-header"
-          interactive
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <AdultStickerStamp
+            kind="xxx-uncensored"
+            size="xs"
+            tilted
+            className="hidden sm:inline-flex"
+          />
+          <ContentRatingBadge
+            rating={video.contentRating}
+            variant="player-header"
+            interactive
+          />
+        </div>
       </div>
 
       {/* Theater Mode Full-Width Cinema Stage */}
       {theaterMode && (
         <div className="mb-6">
           <VideoPlayer
+            videoId={video.id}
             title={video.title}
             videoUrl={video.videoUrl}
             thumbnailUrl={video.thumbnailUrl}
@@ -251,6 +256,7 @@ export function WatchView({ video }: WatchViewProps) {
         <div className="lg:col-span-8 min-w-0">
           {!theaterMode && (
             <VideoPlayer
+              videoId={video.id}
               title={video.title}
               videoUrl={video.videoUrl}
               thumbnailUrl={video.thumbnailUrl}
@@ -369,7 +375,14 @@ export function WatchView({ video }: WatchViewProps) {
             </div>
           </div>
 
-          {/* YouTube-Style Description & Source Destination Box */}
+          {/* Quick Emoji Reaction Bar */}
+          <VideoReactionBar
+            videoId={video.id}
+            initialReactions={video.reactions}
+            className="mt-4"
+          />
+
+          {/* YouTube-Style Description Box (Original Source Hidden from Public View) */}
           <div className="mt-4 rounded-xl bg-white dark:bg-[#18181B] border border-zinc-200 dark:border-zinc-800/90 p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 tabular-nums">
@@ -384,17 +397,6 @@ export function WatchView({ video }: WatchViewProps) {
                   {video.category.name}
                 </TransitionLink>
               </div>
-
-              <a
-                href={video.videoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handlePlayRedirect}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:text-rose-500 dark:hover:text-rose-300 transition-colors"
-              >
-                <span>Open original on {sourceHost}</span>
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
             </div>
 
             <p className="mt-2.5 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
@@ -447,9 +449,11 @@ export function WatchView({ video }: WatchViewProps) {
                 const isActive = idx === activeChapterIdx;
                 return (
                   <li key={chapter.id}>
-                    <button
+                    <motion.button
                       type="button"
                       onClick={() => handleSelectChapter(chapter.timestampSeconds)}
+                      whileHover={{ x: 3 }}
+                      whileTap={{ scale: 0.98 }}
                       aria-current={isActive ? 'step' : undefined}
                       className={cn(
                         'w-full text-left rounded-lg px-3 py-2.5 transition-colors cursor-pointer flex items-start gap-3',
@@ -485,7 +489,7 @@ export function WatchView({ video }: WatchViewProps) {
                           </p>
                         )}
                       </div>
-                    </button>
+                    </motion.button>
                   </li>
                 );
               })}
@@ -502,14 +506,7 @@ export function WatchView({ video }: WatchViewProps) {
                 Up Next
               </h2>
               <div className="space-y-3">
-                {video.relatedVideos.map((rel) => {
-                  const relSecs = resolveVideoProgressSeconds(
-                    rel.id,
-                    rel.watchProgressSeconds,
-                    localProgressMap
-                  );
-                  const relProgress = computeWatchProgress(relSecs, rel.durationSeconds);
-                  return (
+                {video.relatedVideos.map((rel) => (
                   <TransitionLink
                     key={rel.id}
                     href={`/watch/${rel.id}`}
@@ -533,29 +530,7 @@ export function WatchView({ video }: WatchViewProps) {
                         variant="micro"
                         className="absolute top-1.5 left-1.5"
                       />
-                      {relProgress.hasProgress && (
-                        <div
-                          role="progressbar"
-                          aria-label={`Watch progress for ${rel.title}: ${relProgress.statusLabel}`}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={relProgress.percent}
-                          className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-black/60"
-                        >
-                          <div className="h-full w-full bg-white/25 overflow-hidden">
-                            <div
-                              className="h-full bg-[#FF0033]"
-                              style={{ width: `${relProgress.percent}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <span
-                        className={cn(
-                          'absolute right-1 rounded bg-black/85 px-1.5 py-0.5 font-mono text-[0.625rem] text-white tabular-nums',
-                          relProgress.hasProgress ? 'bottom-1.5' : 'bottom-1'
-                        )}
-                      >
+                      <span className="absolute right-1 bottom-1 rounded bg-black/85 px-1.5 py-0.5 font-mono text-[0.625rem] text-white tabular-nums">
                         {formatDuration(rel.durationSeconds)}
                       </span>
                     </div>
@@ -579,8 +554,7 @@ export function WatchView({ video }: WatchViewProps) {
                       </p>
                     </div>
                   </TransitionLink>
-                  );
-                })}
+                ))}
               </div>
             </section>
           )}

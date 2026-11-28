@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { BadgeCheck, UserCheck, UserPlus } from 'lucide-react';
 import type { User, VideoWithMeta } from '@/lib/types';
+import { requestApiJson } from '@/lib/api-client';
 import { formatViews } from '@/lib/video-utils';
 import { EducatorAvatar } from '@/components/ui/avatar';
 import { VideoCard } from '@/components/video-card';
@@ -29,18 +30,17 @@ export function CreatorProfileView({
     const next = !isFollowing;
     setIsFollowing(next);
     setFollowersCount((c) => Math.max(0, c + (next ? 1 : -1)));
-    try {
-      const res = await fetch(`/api/creators/${creator.username}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creatorId: creator.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIsFollowing(Boolean(data.isFollowing));
-        setFollowersCount(data.followersCount);
-      }
-    } catch {
+    const { ok, data } = await requestApiJson<{
+      isFollowing: boolean;
+      followersCount: number;
+    }>(`/api/creators/${creator.username}`, {
+      method: 'POST',
+      json: { creatorId: creator.id },
+    });
+    if (ok && data) {
+      setIsFollowing(Boolean(data.isFollowing));
+      setFollowersCount(data.followersCount);
+    } else {
       setIsFollowing(!next);
     }
   };

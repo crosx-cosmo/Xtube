@@ -3,6 +3,7 @@ import { listEducators } from '@/lib/repository';
 import {
   buildBreadcrumbJsonLd,
   buildCanonicalUrl,
+  serializeJsonLd,
   SITE_KEYWORDS,
   SITE_NAME,
 } from '@/lib/seo';
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
 
 export default async function EducatorsPage() {
   const educators = await listEducators();
-  const breadcrumbJsonLd = JSON.stringify(
+  const breadcrumbJsonLd = serializeJsonLd(
     buildBreadcrumbJsonLd([
       { name: 'Home', path: '/' },
       { name: 'VIP Creators & Featured Talent', path: '/educators' },

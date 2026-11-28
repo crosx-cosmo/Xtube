@@ -4,6 +4,7 @@ import * as React from 'react';
 import { motion } from 'motion/react';
 import { ArrowBigUp, BadgeCheck, EyeOff, MessageSquare, Reply } from 'lucide-react';
 import type { CommentItem, CommentNode } from '@/lib/types';
+import { requestApiJson } from '@/lib/api-client';
 import { buildCommentTree, formatEditorialDate } from '@/lib/video-utils';
 import { EducatorAvatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -68,25 +69,25 @@ export function DiscussionSection({
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/videos/${videoId}/comments`, {
+      const { ok, data, error } = await requestApiJson<{
+        comment?: CommentItem;
+        error?: string;
+      }>(`/api/videos/${videoId}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        json: {
           content: trimmed,
           isAnonymous,
           parentId: null,
-        }),
+        },
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || 'Could not post your comment.');
+      if (!ok || !data?.comment) {
+        setErrorMsg(data?.error || error || 'Could not post your comment.');
         return;
       }
-      setComments((prev) => [data.comment, ...prev]);
-      setRecentRootIds((prev) => [data.comment.id, ...prev]);
+      const created = data.comment;
+      setComments((prev) => [created, ...prev]);
+      setRecentRootIds((prev) => [created.id, ...prev]);
       setContent('');
-    } catch {
-      setErrorMsg('Network error while posting comment. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -98,18 +99,20 @@ export function DiscussionSection({
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/videos/${videoId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: trimmed,
-          isAnonymous: replyAnonymous,
-          parentId,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.comment) {
-        setComments((prev) => [...prev, data.comment]);
+      const { ok, data } = await requestApiJson<{ comment?: CommentItem }>(
+        `/api/videos/${videoId}/comments`,
+        {
+          method: 'POST',
+          json: {
+            content: trimmed,
+            isAnonymous: replyAnonymous,
+            parentId,
+          },
+        }
+      );
+      if (ok && data?.comment) {
+        const created = data.comment;
+        setComments((prev) => [...prev, created]);
         setReplyContent('');
         setReplyingToId(null);
         setReplyAnonymous(false);
@@ -132,22 +135,19 @@ export function DiscussionSection({
       })
     );
 
-    try {
-      const res = await fetch(`/api/comments/${commentId}/upvote`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setComments((prev) =>
-          prev.map((c) =>
-            c.id === commentId
-              ? { ...c, upvotes: updated.upvotes, hasUpvoted: updated.hasUpvoted }
-              : c
-          )
-        );
-      }
-    } catch {
-      // Keep optimistic state if offline
+    const { ok, data } = await requestApiJson<{
+      upvotes: number;
+      hasUpvoted: boolean;
+    }>(`/api/comments/${commentId}/upvote`, { method: 'POST' });
+
+    if (ok && data) {
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? { ...c, upvotes: data.upvotes, hasUpvoted: data.hasUpvoted }
+            : c
+        )
+      );
     }
   };
 

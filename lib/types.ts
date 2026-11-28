@@ -109,6 +109,7 @@ export interface VideoDetail extends VideoWithMeta {
   comments: CommentItem[];
   isFollowingCreator: boolean;
   relatedVideos: VideoWithMeta[];
+  reactions?: import('./video-reactions').VideoReactionState;
 }
 
 export interface UploadChapterInput {

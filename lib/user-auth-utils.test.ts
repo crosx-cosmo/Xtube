@@ -10,7 +10,6 @@ import {
   isValidEmail,
   normalizeEmail,
   sanitizeResetQueryParam,
-  validatePasswordResetConfirmInput,
   validatePasswordResetOtpConfirmInput,
   validatePasswordResetRequestInput,
   validateSignInInput,
@@ -85,43 +84,6 @@ test('validatePasswordResetRequestInput validates and normalizes admin email', (
   const valid = validatePasswordResetRequestInput({ email: '  Admin@Kinship.Edu ' });
   assert.equal(valid.valid, true);
   assert.equal(valid.normalized.email, 'admin@kinship.edu');
-});
-
-test('validatePasswordResetConfirmInput enforces token, password rules, and matching confirmation', () => {
-  const badAll = validatePasswordResetConfirmInput({
-    token: '123',
-    newPassword: 'short',
-    confirmPassword: 'different',
-  });
-  assert.equal(badAll.valid, false);
-  assert.ok(badAll.errors.token);
-  assert.ok(badAll.errors.newPassword);
-  assert.ok(badAll.errors.confirmPassword);
-
-  const weakPassword = validatePasswordResetConfirmInput({
-    token: 'reset-token-abcdef',
-    newPassword: 'onlyletters',
-    confirmPassword: 'onlyletters',
-  });
-  assert.equal(weakPassword.valid, false);
-  assert.match(weakPassword.errors.newPassword ?? '', /letter and one number/i);
-
-  const mismatch = validatePasswordResetConfirmInput({
-    token: 'reset-token-abcdef',
-    newPassword: 'NewPassword2026',
-    confirmPassword: 'NewPassword2027',
-  });
-  assert.equal(mismatch.valid, false);
-  assert.match(mismatch.errors.confirmPassword ?? '', /do not match/i);
-
-  const valid = validatePasswordResetConfirmInput({
-    token: '  reset-token-abcdef  ',
-    newPassword: 'NewPassword2026',
-    confirmPassword: 'NewPassword2026',
-  });
-  assert.equal(valid.valid, true);
-  assert.equal(valid.normalized.token, 'reset-token-abcdef');
-  assert.equal(valid.normalized.newPassword, 'NewPassword2026');
 });
 
 test('validatePasswordResetOtpConfirmInput validates email, OTP code, and password rules', () => {

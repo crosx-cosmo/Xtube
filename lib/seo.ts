@@ -27,13 +27,27 @@ export const DEFAULT_OG_IMAGE = '/images/thumb_conflict_repair_1795107900131.jpg
  * Resolves the canonical base origin for metadata, sitemaps, and structured data.
  */
 export function getSiteUrl(
-  envAppUrl: string | undefined = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL
+  envAppUrl: string | undefined = process.env.APP_URL
 ): string {
   const raw = envAppUrl?.trim();
   if (raw && /^https?:\/\/[^/\s]+/i.test(raw)) {
     return raw.replace(/\/+$/, '');
   }
   return 'https://heylady.vip';
+}
+
+/**
+ * Safely serializes structured data into a JSON-LD string for `<script type="application/ld+json">`,
+ * escaping HTML-significant characters (`<`, `>`, `&`) and Unicode line separators (`\u2028`, `\u2029`)
+ * so user-supplied titles or descriptions can never break out of `<script>` tags.
+ */
+export function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 /**
@@ -169,6 +183,22 @@ export function buildWebsiteJsonLd(siteUrl: string = getSiteUrl()) {
             urlTemplate: `${rootUrl}?q={search_term_string}`,
           },
           'query-input': 'required name=search_term_string',
+        },
+      },
+      {
+        '@type': 'WebApplication',
+        '@id': `${rootUrl}#webapp`,
+        name: SITE_NAME,
+        url: rootUrl,
+        description: SITE_DESCRIPTION,
+        applicationCategory: 'MultimediaApplication',
+        operatingSystem: 'All',
+        isFamilyFriendly: false,
+        contentRating: '18+',
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
         },
       },
     ],

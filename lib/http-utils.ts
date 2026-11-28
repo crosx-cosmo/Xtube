@@ -253,7 +253,7 @@ export function verifySameOriginMutation(request: Request): NextResponse | null 
   } catch {
     // Ignore malformed request.url in synthetic tests
   }
-  const configuredAppUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+  const configuredAppUrl = process.env.APP_URL?.trim();
   if (configuredAppUrl) {
     try {
       allowedHosts.add(new URL(configuredAppUrl).host.toLowerCase());

@@ -6,6 +6,7 @@ import {
   buildBreadcrumbJsonLd,
   buildCanonicalUrl,
   buildVideoObjectJsonLd,
+  serializeJsonLd,
   SITE_KEYWORDS,
   SITE_NAME,
 } from '@/lib/seo';
@@ -64,8 +65,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
     notFound();
   }
 
-  const videoJsonLd = JSON.stringify(buildVideoObjectJsonLd(video));
-  const breadcrumbJsonLd = JSON.stringify(
+  const videoJsonLd = serializeJsonLd(buildVideoObjectJsonLd(video));
+  const breadcrumbJsonLd = serializeJsonLd(
     buildBreadcrumbJsonLd([
       { name: 'Home', path: '/' },
       {

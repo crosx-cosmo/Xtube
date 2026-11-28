@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { AppShell } from '@/components/app-shell';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -10,14 +11,24 @@ import {
   buildWebsiteJsonLd,
   DEFAULT_OG_IMAGE,
   getSiteUrl,
+  serializeJsonLd,
   SITE_DESCRIPTION,
   SITE_KEYWORDS,
   SITE_NAME,
   SITE_TITLE,
 } from '@/lib/seo';
 
-const GOOGLE_FONTS_HREF =
-  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap';
+const geistSans = Geist({
+  variable: '--font-geist-sans',
+  subsets: ['latin'],
+  display: 'swap',
+});
+
+const geistMono = Geist_Mono({
+  variable: '--font-geist-mono',
+  subsets: ['latin'],
+  display: 'swap',
+});
 
 const siteUrl = getSiteUrl();
 const ogImageUrl = buildAbsoluteAssetUrl(DEFAULT_OG_IMAGE, siteUrl);
@@ -112,18 +123,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const categories = await getCategories();
-  const websiteJsonLd = JSON.stringify(buildWebsiteJsonLd(siteUrl));
+  const websiteJsonLd = serializeJsonLd(buildWebsiteJsonLd(siteUrl));
 
   return (
-    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable}`}
+    >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link rel="stylesheet" href={GOOGLE_FONTS_HREF} />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <script
           type="application/ld+json"
@@ -132,7 +141,7 @@ export default async function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className="min-h-dvh bg-[#F4F5F8] dark:bg-[#0B0B0F] text-zinc-900 dark:text-zinc-100 font-sans selection:bg-rose-600/20 dark:selection:bg-rose-600/30 selection:text-rose-900 dark:selection:text-white"
+        className="min-h-dvh bg-[#F4F5F8] dark:bg-[#0B0B0F] text-zinc-900 dark:text-zinc-100 font-sans antialiased selection:bg-rose-600/20 dark:selection:bg-rose-600/30 selection:text-rose-900 dark:selection:text-white"
       >
         <ThemeProvider>
           <ViewTransitionProvider>

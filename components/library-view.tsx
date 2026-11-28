@@ -7,6 +7,7 @@ import { VideoCard } from '@/components/video-card';
 import { TransitionLink } from '@/components/transition-link';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { requestApiJson } from '@/lib/api-client';
 import { formatDuration, formatEditorialDate } from '@/lib/video-utils';
 import {
   clearLocalWatchProgress,
@@ -32,24 +33,19 @@ export function LibraryView({
 
   const handleToggleBookmark = async (videoId: string) => {
     setBookmarks((prev) => prev.filter((v) => v.id !== videoId));
-    try {
-      await fetch('/api/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
-      });
-    } catch {
-      // Keep optimistic state
-    }
+    await requestApiJson('/api/bookmarks', {
+      method: 'POST',
+      json: { videoId },
+    });
   };
 
   const handleClearHistory = async () => {
     setClearing(true);
     try {
-      const res = await fetch('/api/bookmarks', {
+      const { ok } = await requestApiJson('/api/bookmarks', {
         method: 'DELETE',
       });
-      if (res.ok) {
+      if (ok) {
         setHistory([]);
         clearLocalWatchProgress();
       }

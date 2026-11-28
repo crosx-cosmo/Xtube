@@ -64,14 +64,21 @@ test('detectImageContentType verifies raster magic bytes and rejects SVG/HTML pa
   assert.equal(detectImageContentType(svgPayload), null);
 });
 
-test('sanitizeThumbnailObjectKey allows strictly confined thumbnail keys and blocks traversal', () => {
+test('sanitizeThumbnailObjectKey allows strictly confined thumbnail and bg-images keys and blocks traversal', () => {
   const ok = sanitizeThumbnailObjectKey(['thumbnails', '2026', '11', 'abc123.webp']);
   assert.deepEqual(ok, {
     key: 'thumbnails/2026/11/abc123.webp',
     contentType: 'image/webp',
   });
 
+  const bgOk = sanitizeThumbnailObjectKey(['bg-images', '1000294410.jpg']);
+  assert.deepEqual(bgOk, {
+    key: 'bg-images/1000294410.jpg',
+    contentType: 'image/jpeg',
+  });
+
   assert.equal(sanitizeThumbnailObjectKey(['thumbnails', '..', 'secret.jpg']), null);
+  assert.equal(sanitizeThumbnailObjectKey(['bg-images', '..', 'secret.jpg']), null);
   assert.equal(sanitizeThumbnailObjectKey(['private', '2026', 'cover.jpg']), null);
   assert.equal(sanitizeThumbnailObjectKey(['thumbnails', '2026', 'evil.svg']), null);
   assert.equal(sanitizeThumbnailObjectKey(['thumbnails']), null);

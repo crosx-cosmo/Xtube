@@ -110,51 +110,6 @@ export function validatePasswordResetRequestInput(input: {
   };
 }
 
-export interface PasswordResetConfirmValidationResult {
-  valid: boolean;
-  errors: Record<string, string>;
-  normalized: {
-    token: string;
-    newPassword: string;
-  };
-}
-
-export function validatePasswordResetConfirmInput(input: {
-  token?: string;
-  newPassword?: string;
-  confirmPassword?: string;
-}): PasswordResetConfirmValidationResult {
-  const errors: Record<string, string> = {};
-  const token = (typeof input.token === 'string' ? input.token : '').trim();
-  const newPassword = typeof input.newPassword === 'string' ? input.newPassword : '';
-  const confirmPassword =
-    typeof input.confirmPassword === 'string' ? input.confirmPassword : undefined;
-
-  if (!token || token.length < 6) {
-    errors.token = 'Enter a valid password reset token from your email.';
-  } else if (token.length > 512) {
-    errors.token = 'Reset token is too long.';
-  }
-
-  if (newPassword.length < 8) {
-    errors.newPassword = 'New password must be at least 8 characters long.';
-  } else if (newPassword.length > 128) {
-    errors.newPassword = 'New password must be 128 characters or fewer.';
-  } else if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
-    errors.newPassword = 'New password must include at least one letter and one number.';
-  }
-
-  if (confirmPassword !== undefined && newPassword !== confirmPassword) {
-    errors.confirmPassword = 'Passwords do not match.';
-  }
-
-  return {
-    valid: Object.keys(errors).length === 0,
-    errors,
-    normalized: { token, newPassword },
-  };
-}
-
 export interface PasswordResetOtpConfirmValidationResult {
   valid: boolean;
   errors: Record<string, string>;
@@ -284,7 +239,6 @@ export function getNeonAuthBaseUrl(baseUrl?: string | null): string | null {
     baseUrl ??
     process.env.NEON_AUTH_BASE_URL ??
     process.env.NEON_AUTH_URL ??
-    process.env.NEXT_PUBLIC_NEON_AUTH_URL ??
     ''
   ).trim();
   if (!raw) return null;

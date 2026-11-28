@@ -20,9 +20,16 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import gsap from 'gsap';
 import type { Category } from '@/lib/types';
 import { AdultCreatorGate } from '@/components/adult-creator-gate';
+import {
+  AdultFloatingStickersLayer,
+  AdultStickerStamp,
+} from '@/components/adult-stickers';
+import { AgeVerificationModal } from '@/components/age-verification-modal';
 import { BrandLogo } from '@/components/brand-logo';
+import { KeepAlivePulse } from '@/components/keep-alive-pulse';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {
   ScrollImmersiveProvider,
@@ -83,19 +90,27 @@ function TopSearchBar() {
           placeholder="Search videos..."
           className="h-10 w-full min-w-0 rounded-full border border-zinc-200/90 dark:border-zinc-800 bg-[#F4F5F8] dark:bg-[#181820] pl-9 sm:pl-10 pr-8 sm:pr-9 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:border-rose-500/70 focus:bg-white dark:focus:bg-[#121218] focus:ring-2 focus:ring-rose-500/15 focus:outline-none transition-all"
         />
-        {query && (
-          <button
-            type="button"
-            onClick={() => {
-              setQuery('');
-              navigateWithTransition('/');
-            }}
-            aria-label="Clear search query"
-            className="absolute right-3 inline-flex h-5 w-5 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 cursor-pointer"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
+        <AnimatePresence>
+          {query && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.6, rotate: -45 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.6, rotate: 45 }}
+              whileHover={{ scale: 1.15, rotate: 90 }}
+              whileTap={{ scale: 0.85 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 20 }}
+              onClick={() => {
+                setQuery('');
+                navigateWithTransition('/');
+              }}
+              aria-label="Clear search query"
+              className="absolute right-3 inline-flex h-5 w-5 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
     </form>
   );
@@ -110,6 +125,7 @@ export function AppShell({
 }) {
   return (
     <ScrollImmersiveProvider>
+      <KeepAlivePulse />
       <AppShellInner categories={categories}>{children}</AppShellInner>
     </ScrollImmersiveProvider>
   );
@@ -130,6 +146,7 @@ function AppShellInner({
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [ageGateOpen, setAgeGateOpen] = React.useState(false);
   const { isImmersiveScroll, restoreChrome, setChromeLocked } = useImmersiveScroll();
+  const shellRef = React.useRef<HTMLDivElement | null>(null);
 
   const showExpandedSidebar = !isWatchPage && !isAdminPage && sidebarOpen;
 
@@ -151,6 +168,32 @@ function AppShellInner({
     setChromeLocked(mobileMenuOpen || ageGateOpen);
   }, [mobileMenuOpen, ageGateOpen, setChromeLocked]);
 
+  React.useEffect(() => {
+    if (isAdminPage || isWatchPage || typeof window === 'undefined') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const container = shellRef.current;
+    if (!container) return;
+    const targets = container.querySelectorAll('[data-gsap-nav-item]');
+    if (targets.length === 0) return;
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        targets,
+        { opacity: 0, x: -10 },
+        {
+          opacity: 1,
+          x: 0,
+          duration: 0.38,
+          stagger: 0.035,
+          ease: 'power3.out',
+          clearProps: 'transform,opacity',
+        }
+      );
+    }, container);
+
+    return () => ctx.revert();
+  }, [isAdminPage, isWatchPage]);
+
   if (isAdminPage) {
     return (
       <div
@@ -164,10 +207,14 @@ function AppShellInner({
 
   return (
     <div
+      ref={shellRef}
       data-testid="app-shell"
       data-scroll-immersive={isImmersiveScroll ? 'true' : 'false'}
-      className="min-h-dvh flex flex-col bg-[#F4F5F8] dark:bg-[#0B0B0F] text-zinc-900 dark:text-zinc-100"
+      className="relative min-h-dvh flex flex-col bg-[#F4F5F8] dark:bg-[#0B0B0F] text-zinc-900 dark:text-zinc-100"
     >
+      {/* Floating Mouse-Reactive 18+ Adult Stickers & Symbols Layer across Site Layout */}
+      <AdultFloatingStickersLayer hidden={isImmersiveScroll} />
+
       {/* Crisp Studio-White / Deep-Obsidian Streaming Top Bar */}
       <header
         data-testid="app-header"
@@ -196,8 +243,11 @@ function AppShellInner({
       >
         {/* Left: Sidebar Toggle + Brand Wordmark */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <button
+          <motion.button
             type="button"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.88, rotate: -10 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 20 }}
             onClick={() => {
               if (window.innerWidth < 1024 || isWatchPage || isAdminPage) {
                 setMobileMenuOpen((prev) => !prev);
@@ -210,7 +260,7 @@ function AppShellInner({
             className="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-zinc-950 dark:hover:text-white transition-colors cursor-pointer"
           >
             <Menu className="h-5 w-5" />
-          </button>
+          </motion.button>
 
           <TransitionLink
             href="/"
@@ -219,6 +269,14 @@ function AppShellInner({
           >
             <BrandLogo variant="header" />
           </TransitionLink>
+
+          <AdultStickerStamp
+            kind="18-plus"
+            size="xs"
+            tilted
+            interactive={false}
+            className="hidden md:inline-flex"
+          />
         </div>
 
         {/* Center: Pill Search Bar */}
@@ -238,7 +296,7 @@ function AppShellInner({
             href="/library"
             aria-label="Saved videos"
             className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-full px-3 sm:px-3.5 text-sm font-medium transition-all whitespace-nowrap',
+              'inline-flex h-9 items-center gap-2 rounded-full px-3 sm:px-3.5 text-sm font-medium transition-all active:scale-95 whitespace-nowrap',
               pathname === '/library'
                 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25'
                 : 'bg-[#F4F5F8] dark:bg-[#181820] text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-800 hover:border-rose-300 dark:hover:border-rose-500/40 hover:text-rose-600 dark:hover:text-rose-400'
@@ -256,44 +314,59 @@ function AppShellInner({
         </div>
       </header>
 
-      {/* Mobile / Watch-Page Slide-Over Drawer */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          <button
-            type="button"
-            aria-label="Close navigation menu"
-            onClick={() => setMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-xs cursor-default"
-          />
-          <aside className="relative z-10 w-[min(82vw,16.75rem)] max-w-[82vw] bg-white dark:bg-[#121218] border-r border-zinc-200 dark:border-zinc-800 h-full overflow-y-auto p-3.5 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-2 py-2 mb-3 border-b border-zinc-200/80 dark:border-zinc-800">
-              <TransitionLink
-                href="/"
-                aria-label="Hey Lady Home"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center group"
-              >
-                <BrandLogo variant="drawer" showWordmarkOnMobile />
-              </TransitionLink>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                aria-label="Close sidebar"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <SidebarNavContent
-              pathname={pathname}
-              categories={categories}
-              compact={false}
-              onNavigate={() => setMobileMenuOpen(false)}
-              onOpenCreatorGate={handleOpenCreatorGate}
+      {/* Mobile / Watch-Page Slide-Over Drawer with Animated Backdrop & Cross Button */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            <motion.button
+              type="button"
+              aria-label="Close navigation menu"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-xs cursor-default"
             />
-          </aside>
-        </div>
-      )}
+            <motion.aside
+              initial={{ x: '-100%', opacity: 0.6 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '-100%', opacity: 0.6 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="relative z-10 w-[min(82vw,16.75rem)] max-w-[82vw] bg-white dark:bg-[#121218] border-r border-zinc-200 dark:border-zinc-800 h-full overflow-y-auto p-3.5 flex flex-col shadow-2xl"
+            >
+              <div className="flex items-center justify-between px-2 py-2 mb-3 border-b border-zinc-200/80 dark:border-zinc-800">
+                <TransitionLink
+                  href="/"
+                  aria-label="Hey Lady Home"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center group"
+                >
+                  <BrandLogo variant="drawer" showWordmarkOnMobile />
+                </TransitionLink>
+                <motion.button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  whileHover={{ scale: 1.12, rotate: 90 }}
+                  whileTap={{ scale: 0.88, rotate: 180 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 20 }}
+                  aria-label="Close sidebar"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </motion.button>
+              </div>
+              <SidebarNavContent
+                pathname={pathname}
+                categories={categories}
+                compact={false}
+                onNavigate={() => setMobileMenuOpen(false)}
+                onOpenCreatorGate={handleOpenCreatorGate}
+              />
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Main Streaming Body: Elevated Left Navigation Rail + Cinema Content Canvas */}
       <div className="flex flex-1 min-w-0">
@@ -303,7 +376,7 @@ function AppShellInner({
             aria-label="Sidebar navigation"
             aria-hidden={isImmersiveScroll}
             className={cn(
-              'hidden lg:flex flex-col shrink-0 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto border-r border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#121218] transition-[width,transform,opacity,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+              'hidden lg:flex flex-col shrink-0 sticky top-16 h-[calc(100dvh-4rem)] overflow-y-auto border-r border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#121218] transition-[width,transform,opacity,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
               isImmersiveScroll
                 ? 'w-0 -translate-x-full opacity-0 border-r-0 p-0 pointer-events-none overflow-hidden'
                 : showExpandedSidebar
@@ -353,6 +426,12 @@ function AppShellInner({
                       <Lock className="h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500 shrink-0" aria-hidden="true" />
                       <span>Private Viewing</span>
                     </span>
+                    <AdultStickerStamp
+                      kind="xxx-uncensored"
+                      size="xs"
+                      tilted
+                      interactive={false}
+                    />
                   </div>
                 </div>
 
@@ -378,14 +457,16 @@ function AppShellInner({
                   >
                     Favorites
                   </TransitionLink>
-                  <button
+                  <motion.button
                     type="button"
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.94 }}
                     onClick={handleOpenCreatorGate}
                     className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 transition-colors cursor-pointer"
                   >
                     <Crown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>Creator Studio</span>
-                  </button>
+                  </motion.button>
                 </nav>
               </div>
             </footer>
@@ -409,7 +490,7 @@ function AppShellInner({
             href="/"
             aria-label="Home"
             className={cn(
-              'inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+              'inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-90 transition-all',
               pathname === '/'
                 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/40'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -422,7 +503,7 @@ function AppShellInner({
             href="/educators"
             aria-label="Creators"
             className={cn(
-              'inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+              'inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-90 transition-all',
               pathname.startsWith('/educators')
                 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/40'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -435,7 +516,7 @@ function AppShellInner({
             href="/library"
             aria-label="Favorites"
             className={cn(
-              'inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+              'inline-flex h-10 w-10 items-center justify-center rounded-full active:scale-90 transition-all',
               pathname === '/library'
                 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/40'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -447,19 +528,22 @@ function AppShellInner({
           <TransitionLink
             href="/library?tab=history"
             aria-label="Watch History"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white transition-colors"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white active:scale-90 transition-all"
           >
             <Clock className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
           </TransitionLink>
 
-          <button
+          <motion.button
             type="button"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.88, rotate: 90 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 20 }}
             onClick={() => setMobileMenuOpen(true)}
             aria-label="Browse topics and menu"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
           >
             <LayoutGrid className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
-          </button>
+          </motion.button>
         </nav>
       )}
 
@@ -485,6 +569,9 @@ function AppShellInner({
           </motion.button>
         )}
       </AnimatePresence>
+
+      {/* Initial Page Load 18+ Age Verification Overlay Modal with Blur Effect */}
+      <AgeVerificationModal />
 
       {/* Full-Screen 18+ Verification Gate before Creator / Admin Login */}
       <AdultCreatorGate
@@ -527,19 +614,20 @@ function SidebarNavContent({
               key={item.href}
               href={item.href}
               onClick={onNavigate}
+              data-gsap-nav-item
               className={cn(
-                'flex items-center rounded-xl transition-colors whitespace-nowrap',
+                'flex items-center rounded-xl transition-all duration-150 active:scale-[0.98] whitespace-nowrap',
                 compact
                   ? 'flex-col justify-center gap-1 py-2.5 px-1 text-[0.625rem]'
-                  : 'gap-3 px-3.5 py-2.5 text-sm font-medium',
+                  : 'gap-3 px-3.5 py-2.5 text-sm font-medium hover:translate-x-0.5',
                 isActive
-                  ? 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold'
+                  ? 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 font-semibold shadow-2xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:bg-[#F4F5F8] dark:hover:bg-zinc-800/70 hover:text-zinc-950 dark:hover:text-white'
               )}
             >
               <Icon
                 className={cn(
-                  'shrink-0',
+                  'shrink-0 transition-transform duration-150',
                   compact ? 'h-5 w-5' : 'h-[1.125rem] w-[1.125rem]',
                   isActive ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-400 dark:text-zinc-500'
                 )}
@@ -550,7 +638,7 @@ function SidebarNavContent({
           );
         })}
 
-        {!compact && (
+        {!compact && categories.length > 0 && (
           <>
             <div className="my-3.5 border-t border-zinc-200/80 dark:border-zinc-800/80" />
             <p className="px-3.5 pb-1.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500">
@@ -561,7 +649,8 @@ function SidebarNavContent({
                 key={topic.id}
                 href={`/?category=${topic.slug}`}
                 onClick={onNavigate}
-                className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-[#F4F5F8] dark:hover:bg-zinc-800/70 hover:text-zinc-950 dark:hover:text-white transition-colors truncate"
+                data-gsap-nav-item
+                className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-[#F4F5F8] dark:hover:bg-zinc-800/70 hover:text-zinc-950 dark:hover:text-white hover:translate-x-0.5 active:scale-[0.98] transition-all duration-150 truncate"
               >
                 <Compass
                   className="h-4 w-4 text-zinc-400 dark:text-zinc-500 shrink-0"
@@ -577,24 +666,28 @@ function SidebarNavContent({
       {/* Discreet Premium Creator Banner (Opens Full-Screen 18+ Verification Gate) */}
       {compact ? (
         <div className="mt-6 pt-3 pb-4 border-t border-zinc-200/80 dark:border-zinc-800/70 flex justify-center">
-          <button
+          <motion.button
             type="button"
             data-testid="become-adult-creator-banner-compact"
             onClick={onOpenCreatorGate}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.94 }}
             aria-label="Become an Adult Creator"
             title="Become an Adult Creator"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-500/30 bg-gradient-to-br from-rose-50 via-white to-amber-50 dark:from-rose-950/60 dark:via-[#18181D] dark:to-amber-950/40 text-amber-600 dark:text-amber-400 hover:border-rose-500/60 hover:scale-[1.03] transition-all cursor-pointer"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-500/30 bg-gradient-to-br from-rose-50 via-white to-amber-50 dark:from-rose-950/60 dark:via-[#18181D] dark:to-amber-950/40 text-amber-600 dark:text-amber-400 hover:border-rose-500/60 transition-colors cursor-pointer"
           >
             <Crown className="h-4 w-4" aria-hidden="true" />
-          </button>
+          </motion.button>
         </div>
       ) : (
         <div className="mt-6 pt-3 pb-4 border-t border-zinc-200/80 dark:border-zinc-800/70">
-          <button
+          <motion.button
             type="button"
             data-testid="become-adult-creator-banner"
             onClick={onOpenCreatorGate}
-            className="group w-full text-left rounded-2xl border border-amber-500/30 dark:border-amber-400/25 bg-gradient-to-br from-rose-50 via-white to-amber-50/80 dark:from-[#1A1318] dark:via-[#141218] dark:to-amber-950/30 p-3.5 shadow-xs hover:border-amber-500/60 dark:hover:border-amber-400/50 hover:shadow-md transition-all cursor-pointer"
+            whileHover={{ y: -2, scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            className="group w-full text-left rounded-2xl border border-amber-500/30 dark:border-amber-400/25 bg-gradient-to-br from-rose-50 via-white to-amber-50/80 dark:from-[#1A1318] dark:via-[#141218] dark:to-amber-950/30 p-3.5 shadow-xs hover:border-amber-500/60 dark:hover:border-amber-400/50 hover:shadow-md transition-colors cursor-pointer"
           >
             <div className="flex items-center justify-between gap-1.5 text-[0.6875rem] font-semibold">
               <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
@@ -611,7 +704,16 @@ function SidebarNavContent({
               Become an Adult Creator
             </p>
 
-            <div className="mt-1 flex items-center justify-between text-[0.6875rem] text-zinc-600 dark:text-zinc-400">
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              <span className="inline-flex items-center rounded bg-rose-600/15 dark:bg-rose-500/20 px-1.5 py-0.5 font-mono text-[0.5625rem] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-300">
+                18+ XXX
+              </span>
+              <span className="inline-flex items-center rounded bg-amber-500/15 dark:bg-amber-400/20 px-1.5 py-0.5 font-mono text-[0.5625rem] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                HOT VIP
+              </span>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between text-[0.6875rem] text-zinc-600 dark:text-zinc-400">
               <span className="inline-flex items-center gap-1">
                 <ShieldCheck className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" aria-hidden="true" />
                 <span>Hey Lady Studio</span>
@@ -621,7 +723,7 @@ function SidebarNavContent({
                 aria-hidden="true"
               />
             </div>
-          </button>
+          </motion.button>
         </div>
       )}
     </div>
